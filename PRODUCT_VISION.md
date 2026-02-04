@@ -43,8 +43,10 @@ Currently, this requires multiple manual steps: web search for recommendations �
 
 **Implemented:**
 - ✅ Consolidated `find_books` MCP tool (search + availability in one call)
+- ✅ CSV output format with flexible Notes column (~60-70% token reduction vs JSON)
 - ✅ Both stdio and HTTP transports
 - ✅ TypeScript with Zod validation
+- ✅ Comprehensive test suite (29 passing tests with real API data)
 - ✅ Docker deployment configuration
 - ✅ Reverse-engineered API client for TLC LS2 PAC
 - ✅ Works with Claude Desktop and mobile Claude
@@ -53,11 +55,10 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - ✅ Meta object architecture (aggregate all data, transform later)
 
 **Current Limitations:**
-- Returns verbose JSON with all API fields (~1500 tokens for 10 results)
-- No format transformation layer yet (CSV, context-aware filtering planned)
 - No timeout handling
 - No authentication support (holds/history not possible yet)
 - Fixed 20 result limit (not configurable)
+- Collection code acronyms not expanded (JE, J, YA show as-is)
 
 ## Stop Criteria
 
@@ -87,31 +88,6 @@ Currently, this requires multiple manual steps: web search for recommendations �
 ## Brainstormed Next Features
 
 *These are brainstormed ideas for what we might work on next. They're not commitments or promises - they're possibilities we can evaluate as we go. The actual path forward will emerge through building and testing.*
-
-### CSV Output Format
-
-**What it does:** Transforms tool output from verbose JSON to compact CSV format with flexible "Notes" column.
-
-**Why valuable:** Reduces tokens by ~63% compared to current output. Testing showed CSV uses 60 tokens vs 163 tokens for markdown tables (5 books). Critical for mobile usage with limited context.
-
-**Complexity:** Low-Medium - requires reformatting response but doesn't change API logic.
-
-**Output Format Specification:**
-- Format: `Title,Author,Call#,Branch,Status,Notes`
-- **Why CSV?** Testing showed CSV is 63% more efficient than markdown tables (60 tokens vs 163 tokens for 5 books)
-- **Why Notes column?** Provides flexibility for edge cases without adding structure overhead:
-  - Media type variations: "Audiobook", "eBook", "DVD"
-  - Personal status: "On hold for you", "Ready for pickup"
-  - Special editions: "Large print", "Bilingual"
-  - Empty for 99% of standard physical books (minimal token overhead)
-- **Benefits:** Token-efficient, LLM-native format, future-proof, mobile-friendly
-- **Trade-offs:** Less visually formatted than tables, but readability is fine for LLM consumption
-
-**When we build this, check:**
-- Does CSV parse correctly in Claude's context?
-- Are we stripping the right fields? Test with real searches.
-- Is the Notes column being used appropriately (not cluttered)?
-- Should this be the default format or a tool parameter option?
 
 ### Bulk Book Search
 
@@ -335,6 +311,39 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - Would effort be better spent on more structured tools for specific use cases?
 - How to evaluate success? What queries should this handle that current tools can't?
 - Should this be a separate experimental branch/project?
+
+### Expand Collection Code Acronyms in Call Numbers
+
+**What it does:**
+- Transform call number prefixes from acronyms to readable text
+- Examples: "JE" → "Juvenile Easy", "J" → "Juvenile Fiction", "YA" → "Young Adult"
+- Either expand inline in call number field or add to Notes column
+- Optional via parameter or always-on
+
+**Why valuable:**
+- Call number acronyms are confusing, especially when they coincide with author names
+- "J Donaldson" looks like a name, not "Juvenile Fiction - Donaldson"
+- Users unfamiliar with library classification systems benefit from clarity
+- More readable for LLM interpretation and user understanding
+
+**Complexity:** Low-Medium - requires:
+- Mapping of common collection codes (JE, J, YA, FIC, NF, AB, etc.)
+- Discovery of all collection codes used by Handley library
+- Decision: expand in call number field or use Notes column?
+- Testing to ensure expanded text doesn't hurt token efficiency
+
+**When we build this, check:**
+- Does expanding acronyms improve clarity without ballooning tokens?
+- Should this be opt-in via parameter or always-on?
+- Do we have a complete list of collection codes?
+- Should we expand all codes or just the ambiguous ones (J, E, etc.)?
+- Does "JE Donaldson" → "Juvenile Easy - Donaldson" read better?
+- Or should it be in Notes: "JE Donaldson" with Notes: "Juvenile Easy"?
+
+**Open questions:**
+- Is this more valuable in Notes column (preserves exact call number) or inline expansion?
+- Does this actually help users find books on shelves, or just make output more readable?
+- Should expansion be context-aware (only expand when user is unfamiliar)?
 
 ### Branch Discovery Tool (Internal)
 

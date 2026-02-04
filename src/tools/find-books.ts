@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { searchCatalog, checkAvailability, type SearchField } from "../lib/api.js";
+import { formatAsCSV, type MergedResource } from "../lib/csv-formatter.js";
 
 const SearchFieldSchema = z
   .enum([
@@ -108,7 +109,7 @@ export function registerFindBooksTool(server: McpServer): void {
         );
 
         // Step 5: Aggregate all data - merge search results with availability data
-        const results = searchResponse.resources
+        const results: MergedResource[] = searchResponse.resources
           .map((resource) => {
             // Merge holdings with availability data (keep ALL fields from both)
             const holdingsWithAvailability = resource.holdingsInformations.map((holding) => {
@@ -166,11 +167,14 @@ export function registerFindBooksTool(server: McpServer): void {
           };
         }
 
+        // Transform aggregated meta object to CSV format
+        const csvOutput = formatAsCSV(results);
+
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(results, null, 2),
+              text: csvOutput,
             },
           ],
         };
