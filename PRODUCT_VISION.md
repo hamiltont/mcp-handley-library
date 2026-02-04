@@ -120,6 +120,43 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - Should we support per-query parameters (different branches, availability filters)?
 - How to communicate query→result mapping in output?
 
+### Result Deduplication
+
+**What it does:**
+- Deterministically clean up duplicate entries in search results
+- Remove 100% identical rows (complete duplicates)
+- Deduplicate rows that differ only in status column
+- When deduplicating, prefer keeping rows with `status=Available`
+- Preserve rows that differ by branch/library name (these represent different physical copies)
+
+**Why valuable:** Popular books often have many copies across branches, leading to cluttered results with many near-identical entries. For example, "Harry Potter and the Prisoner of Azkaban" might return 8 rows where 2-3 are at Handley, 4 are at Bowman, and one is at Clarke. The user wants to know:
+- Is it available at their preferred branch? → Keep branch-specific entries
+- What's the overall availability status? → Deduplicate status variations, prefer "Available"
+
+Real-world example: Harry Potter searches return 40+ rows with significant duplication. Cleaning this up would improve readability and reduce token usage.
+
+**Complexity:** Medium - requires:
+- Row comparison logic (which fields constitute a "duplicate"?)
+- Deterministic sort/selection when multiple copies exist
+- Clear rules for when to merge vs keep separate
+- Testing with real-world messy data (Harry Potter, Julia Donaldson)
+- Balancing deduplication aggressiveness vs information loss
+
+**When we build this, check:**
+- Should deduplication happen automatically or be a tool parameter (`deduplicate=true`)?
+- What's the exact precedence for keeping rows? (Available > Checked Out, or more nuanced?)
+- How to handle rows identical except for due dates? (Both checked out, different dates)
+- Should we preserve count information? ("3 copies at Bowman: 1 available, 2 checked out")
+- Does this play well with Notes column? (Identical rows with different notes)
+- What if call numbers differ slightly but everything else is the same?
+- Token savings measurement: how much does this reduce typical results?
+
+**Open questions:**
+- Should we merge information into a single row ("3 copies: 2 at Bowman, 1 at Clarke") or just remove true duplicates?
+- Is there value in showing "5 copies of this book exist" even if all are checked out?
+- How aggressive should we be? Remove all but one per unique (title, author, call#, branch) combo?
+- Should identical audiobook copies be deduplicated separately from physical books?
+
 ### Media Type Awareness
 
 **What it does:** 
