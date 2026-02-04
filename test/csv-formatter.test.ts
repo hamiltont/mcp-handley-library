@@ -2,18 +2,18 @@
  * Tests for CSV formatting functions
  */
 
-import { test } from "node:test";
 import assert from "node:assert";
+import { test } from "node:test";
+import type { HoldingsInfo, ItemAvailability, Resource } from "../src/lib/api.js";
 import {
-  buildCallNumber,
-  buildNotes,
-  getStatus,
-  escapeCsvField,
-  formatAsCSV,
-  type MergedResource,
-  type MergedHolding,
+    buildCallNumber,
+    buildNotes,
+    escapeCsvField,
+    formatAsCSV,
+    getStatus,
+    type MergedHolding,
+    type MergedResource,
 } from "../src/lib/csv-formatter.js";
-import type { Resource, HoldingsInfo, ItemAvailability } from "../src/lib/api.js";
 
 // --- Test: buildCallNumber ---
 

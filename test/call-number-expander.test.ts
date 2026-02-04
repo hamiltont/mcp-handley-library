@@ -2,14 +2,14 @@
  * Tests for call number expansion logic
  */
 
-import { test } from "node:test";
 import assert from "node:assert";
-import {
-  expandCallNumber,
-  expandCollectionCode,
-  expandDeweyDecimal,
-} from "../src/lib/call-number-expander.js";
+import { test } from "node:test";
 import type { HoldingsInfo } from "../src/lib/api.js";
+import {
+    expandCallNumber,
+    expandCollectionCode,
+    expandDeweyDecimal,
+} from "../src/lib/call-number-expander.js";
 
 // --- Test: expandCollectionCode ---
 

@@ -3,8 +3,8 @@
  * Usage: tsx scripts/fetch-sample-data.ts
  */
 
-import { writeFileSync, mkdirSync } from "fs";
-import { searchCatalog, checkAvailability } from "../src/lib/api.js";
+import { mkdirSync, writeFileSync } from "fs";
+import { checkAvailability, searchCatalog } from "../src/lib/api.js";
 
 async function main() {
   console.log("Fetching sample data from library API...\n");

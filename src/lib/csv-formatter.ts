@@ -2,7 +2,7 @@
  * CSV formatting utilities for library search results
  */
 
-import type { Resource, HoldingsInfo, ItemAvailability } from "./api.js";
+import type { HoldingsInfo, ItemAvailability, Resource } from "./api.js";
 import { expandCallNumber } from "./call-number-expander.js";
 
 /**

@@ -2,11 +2,11 @@
  * Integration tests for CSV formatting with real API data
  */
 
-import { test } from "node:test";
-import assert from "node:assert";
 import { readFileSync } from "fs";
+import assert from "node:assert";
+import { test } from "node:test";
+import type { AvailabilityResponse, SearchResponse } from "../src/lib/api.js";
 import { formatAsCSV, type MergedResource } from "../src/lib/csv-formatter.js";
-import type { SearchResponse, AvailabilityResponse } from "../src/lib/api.js";
 
 test("formatAsCSV: handles real Julia Donaldson search results", () => {
   // Load real API responses

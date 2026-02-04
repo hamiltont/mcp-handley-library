@@ -2,9 +2,9 @@
  * find_books tool - Consolidated search and availability check
  */
 
-import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { searchCatalog, checkAvailability, type SearchField } from "../lib/api.js";
+import { z } from "zod";
+import { checkAvailability, searchCatalog, type SearchField } from "../lib/api.js";
 import { formatAsCSV, type MergedResource } from "../lib/csv-formatter.js";
 
 const SearchFieldSchema = z
