@@ -303,6 +303,52 @@ Currently, this requires multiple manual steps: web search for recommendations â
 - Does omitting these fields actually save meaningful tokens in practice?
 - What about hybrid cases ("show me books at Bowman" from home before visiting)?
 
+### Semantic Search "Find Tool" (Experimental)
+
+**What it does:**
+- New tool: `semantic_find(intent: string)` that accepts natural language description of what the user wants to accomplish
+- Uses embeddings (OpenAI API) to semantically search the library API documentation
+- Returns the relevant API endpoints, parameters, and expected responses
+- LLM can then directly invoke library API functions and receives raw output
+- Enables workflows and use cases not covered by existing structured tools
+
+**Why valuable:** 
+- Allows LLM to discover and use library API capabilities dynamically without pre-defined tools
+- Flexibility for edge cases: "Find all books this author has written in series order", "Show me popular books checked out this month", "What are the library's hours?"
+- Enables discovery of undocumented API features through semantic understanding
+- **Primary use case:** Experimentation with semantic search patterns and embeddings-based tool discovery
+
+**Complexity:** High - requires:
+- API documentation corpus creation (scraping or manual documentation of all library endpoints)
+- Embeddings generation using OpenAI API
+- Vector similarity search implementation
+- Prompt engineering for translating user intent â†’ API calls
+- Raw API invocation layer (bypassing structured tool definitions)
+- Error handling for arbitrary API calls
+- Cost management (embeddings + LLM token usage)
+
+**Requirements:**
+- OpenAI API key in environment: `OPENAI_API_KEY`
+- Documentation corpus of library API (endpoints, parameters, responses)
+- Embedding model: `text-embedding-3-small` or similar
+- Optional: Vector database (could start with in-memory for single-user case)
+
+**When we build this, check:**
+- Does semantic search actually find relevant API endpoints for typical queries?
+- How do we document the API surface for embedding? Auto-generate from OpenAPI? Manual docs?
+- What's the latency impact? (embedding generation + similarity search + LLM interpretation)
+- Should this be a separate tool or a fallback when structured tools don't match?
+- How to handle authentication for arbitrary API calls?
+- Token cost: is this more expensive than just adding more structured tools?
+- How to prevent the LLM from invoking dangerous/destructive API calls?
+- Should raw API responses be formatted or returned as-is?
+
+**Open questions:**
+- Is this genuinely useful or just interesting technically?
+- Would effort be better spent on more structured tools for specific use cases?
+- How to evaluate success? What queries should this handle that current tools can't?
+- Should this be a separate experimental branch/project?
+
 ### Branch Discovery Tool (Internal)
 
 **What it does:**
