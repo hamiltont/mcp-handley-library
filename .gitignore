@@ -15,6 +15,10 @@ dist/
 *.swo
 *~
 
+# Cursor (exclude IDE files but keep plans)
+.cursor/*
+!.cursor/plans/
+
 # OS
 .DS_Store
 Thumbs.db
