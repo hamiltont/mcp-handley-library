@@ -44,9 +44,10 @@ Currently, this requires multiple manual steps: web search for recommendations �
 **Implemented:**
 - ✅ Consolidated `find_books` MCP tool (search + availability in one call)
 - ✅ CSV output format with flexible Notes column (~60-70% token reduction vs JSON)
+- ✅ Expanded call numbers with human-readable descriptions (J → Juvenile Fiction, 814.54 → Literature)
 - ✅ Both stdio and HTTP transports
 - ✅ TypeScript with Zod validation
-- ✅ Comprehensive test suite (29 passing tests with real API data)
+- ✅ Comprehensive test suite (70 passing tests with real API data)
 - ✅ Docker deployment configuration
 - ✅ Reverse-engineered API client for TLC LS2 PAC
 - ✅ Works with Claude Desktop and mobile Claude
@@ -58,7 +59,6 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - No timeout handling
 - No authentication support (holds/history not possible yet)
 - Fixed 20 result limit (not configurable)
-- Collection code acronyms not expanded (JE, J, YA show as-is)
 
 ## Stop Criteria
 
@@ -312,39 +312,6 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - How to evaluate success? What queries should this handle that current tools can't?
 - Should this be a separate experimental branch/project?
 
-### Expand Collection Code Acronyms in Call Numbers
-
-**What it does:**
-- Transform call number prefixes from acronyms to readable text
-- Examples: "JE" → "Juvenile Easy", "J" → "Juvenile Fiction", "YA" → "Young Adult"
-- Either expand inline in call number field or add to Notes column
-- Optional via parameter or always-on
-
-**Why valuable:**
-- Call number acronyms are confusing, especially when they coincide with author names
-- "J Donaldson" looks like a name, not "Juvenile Fiction - Donaldson"
-- Users unfamiliar with library classification systems benefit from clarity
-- More readable for LLM interpretation and user understanding
-
-**Complexity:** Low-Medium - requires:
-- Mapping of common collection codes (JE, J, YA, FIC, NF, AB, etc.)
-- Discovery of all collection codes used by Handley library
-- Decision: expand in call number field or use Notes column?
-- Testing to ensure expanded text doesn't hurt token efficiency
-
-**When we build this, check:**
-- Does expanding acronyms improve clarity without ballooning tokens?
-- Should this be opt-in via parameter or always-on?
-- Do we have a complete list of collection codes?
-- Should we expand all codes or just the ambiguous ones (J, E, etc.)?
-- Does "JE Donaldson" → "Juvenile Easy - Donaldson" read better?
-- Or should it be in Notes: "JE Donaldson" with Notes: "Juvenile Easy"?
-
-**Open questions:**
-- Is this more valuable in Notes column (preserves exact call number) or inline expansion?
-- Does this actually help users find books on shelves, or just make output more readable?
-- Should expansion be context-aware (only expand when user is unfamiliar)?
-
 ### Branch Discovery Tool (Internal)
 
 **What it does:**
@@ -382,7 +349,6 @@ Currently, this requires multiple manual steps: web search for recommendations �
 
 ### Output Format: CSV with Notes Column
 
-**Decision Date:** February 2026
 
 **The Problem:** How to return book search results in a way that minimizes token usage while remaining flexible for edge cases and future expansion?
 
@@ -425,16 +391,28 @@ Where the Wild Things Are,Maurice Sendak,AB SEN,Digital,Available,Audiobook
 - **Availability hints:** "New arrival", "Last copy"
 - **Multiple notes:** Pipe-separated if needed: "Audiobook | Large print"
 
-**Alternative Formats Considered:**
 
-- **Markdown Tables:** Rejected - worst token efficiency, visual bloat (pipes, dashes)
-- **Section Headers:** Rejected - more readable but 80% more tokens than CSV
-- **TSV:** Rejected - tabs less familiar to LLMs than commas
-- **Pure CSV (no notes):** Rejected - inflexible for future expansion
 
-**Testing Evidence:** See `test-format-tokens.ts` and `test-csv-with-notes.ts` for reproducible benchmarks.
+### Call Number Expansion: Human-Readable Descriptions
 
-**When to Revisit:** If we find the Notes column becoming cluttered (>30% of rows), consider adding structured columns. Until then, keep it simple.
+**The Problem:** Call number acronyms like "J DON" and "JE Carle" are confusing - "J" looks like it could be part of a name rather than "Juvenile Fiction". Users unfamiliar with library classification systems need clearer descriptions.
+
+**The Decision:** Expand call numbers inline with human-readable prefixes
+
+**Format Examples:**
+- `J DON` → `Juvenile Fiction J DON`
+- `JE Carle` → `Juvenile Easy JE Carle`
+- `814.54 Qui` → `Literature 814.54 Qui`
+- `567.9 Par` → `Science 567.9 Par`
+- `YA Meyer` → `Young Adult YA Meyer`
+
+**Why This Works:**
+
+1. **Preserves shelf navigation:** Original call number remains intact for finding books
+2. **Improves clarity:** "Juvenile Fiction J DON" is unambiguous
+3. **Minimal token cost:** ~2-4 tokens per row (acceptable for clarity gain)
+4. **Supports Dewey Decimal:** Expands 000-999 range to broad categories
+5. **Prioritizes specificity:** Dewey expansion takes precedence over collection codes when both present
 
 ## Development Approach
 

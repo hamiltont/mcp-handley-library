@@ -111,9 +111,16 @@ The `find_books` tool follows this flow:
 **CSV Transformation:**
 - 60-70% token reduction vs JSON
 - Format: `Title,Author,Call#,Branch,Status,Notes`
-- Call numbers constructed from API pieces (prefix + class + cutter)
+- Call numbers expanded with human-readable descriptions (see Call Number Expansion below)
 - Smart Notes column (empty for standard books, populated for edge cases)
 - Proper CSV escaping for special characters
+
+**Call Number Expansion:**
+- Collection codes expanded inline: `J DON` → `Juvenile Fiction J DON`
+- Dewey Decimal numbers expanded: `814.54 Qui` → `Literature 814.54 Qui`
+- Prioritizes Dewey expansion over collection codes when both present
+- Improves clarity without losing shelf navigation information
+- Implementation in `src/lib/call-number-expander.ts`
 
 This pattern (meta object → transformation) enables adding new output formats without modifying API calling or aggregation logic. See `src/lib/csv-formatter.ts` for transformation implementation.
 
@@ -156,7 +163,7 @@ The upstream library API returns extremely verbose JSON responses with many irre
 
 **Format choice:** CSV for structured catalog data (most compact while remaining readable)
 
-**Call number construction:** API provides 3 separate fields (prefix, class, cutter), MCP server concatenates these deterministically
+**Call number expansion:** API provides 3 separate fields (prefix, class, cutter), MCP server concatenates these with human-readable descriptions for clarity
 
 **Precision reduction:** Boolean availability translated to simple "Available"/"Checked Out" status strings
 
@@ -172,8 +179,9 @@ The upstream library API returns extremely verbose JSON responses with many irre
 
 ```csv
 Title,Author,Call#,Branch,Status,Notes
-The giants and the Joneses,"Donaldson, Julia.",J Donaldson,Bowman,Available,
-One Ted falls out of bed,"Donaldson, Julia.",JE Donaldson,Bowman,Available,
+The giants and the Joneses,"Donaldson, Julia.",Juvenile Fiction J Donaldson,Bowman,Available,
+One Ted falls out of bed,"Donaldson, Julia.",Juvenile Easy JE Donaldson,Bowman,Available,
+Loud and Clear,"Quindlen, Anna",Literature 814.54 Qui,Bowman,Available,
 ```
 
 **Testing approach:** Test suite validates token optimization preserves functionality. 29 tests with real API data samples ensure edge cases are handled correctly.
@@ -262,14 +270,15 @@ Exposed on port 3000, behind home media server gateway.
 
 ```
 src/
-├── index.ts              # Entry point, transport selection
-├── server.ts             # MCP server factory, tool registration
-├── http.ts               # HTTP transport (Express + SSE)
+├── index.ts                      # Entry point, transport selection
+├── server.ts                     # MCP server factory, tool registration
+├── http.ts                       # HTTP transport (Express + SSE)
 ├── lib/
-│   ├── api.ts           # TLC LS2 PAC API client (searchCatalog, checkAvailability, getResourceDetails)
-│   └── csv-formatter.ts # CSV transformation functions (formatAsCSV, buildCallNumber, buildNotes)
+│   ├── api.ts                   # TLC LS2 PAC API client (searchCatalog, checkAvailability, getResourceDetails)
+│   ├── call-number-expander.ts  # Call number expansion logic (collection codes, Dewey Decimal)
+│   └── csv-formatter.ts         # CSV transformation functions (formatAsCSV, buildCallNumber, buildNotes)
 └── tools/
-    └── find-books.ts    # find_books tool (consolidated search + availability + CSV output)
+    └── find-books.ts            # find_books tool (consolidated search + availability + CSV output)
 ```
 
 **Design Patterns:**

@@ -3,6 +3,7 @@
  */
 
 import type { Resource, HoldingsInfo, ItemAvailability } from "./api.js";
+import { expandCallNumber } from "./call-number-expander.js";
 
 /**
  * Merged resource with availability data
@@ -16,25 +17,16 @@ export interface MergedResource extends Resource {
 }
 
 /**
- * Build call number from its component pieces
- * Format: [prefix] class cutter
+ * Build call number from its component pieces with human-readable expansion
+ * Format: [Description] [prefix] class cutter
+ * 
+ * Examples:
+ * - J DON → "Juvenile Fiction J DON"
+ * - 814.54 Johnson → "Literature 814.54 Johnson"
+ * - JE Carle → "Juvenile Easy JE Carle"
  */
 export function buildCallNumber(holding: HoldingsInfo): string {
-  const parts: string[] = [];
-  
-  if (holding.callPrefix) {
-    parts.push(holding.callPrefix);
-  }
-  
-  if (holding.callClass) {
-    parts.push(holding.callClass);
-  }
-  
-  if (holding.callCutter) {
-    parts.push(holding.callCutter);
-  }
-  
-  return parts.join(" ").trim();
+  return expandCallNumber(holding);
 }
 
 /**

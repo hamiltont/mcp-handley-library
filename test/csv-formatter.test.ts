@@ -17,34 +17,34 @@ import type { Resource, HoldingsInfo, ItemAvailability } from "../src/lib/api.js
 
 // --- Test: buildCallNumber ---
 
-test("buildCallNumber: combines all parts", () => {
+test("buildCallNumber: combines all parts with expansion", () => {
   const holding = {
     callPrefix: "J",
     callClass: "FIC",
     callCutter: "DON",
   } as HoldingsInfo;
 
-  assert.strictEqual(buildCallNumber(holding), "J FIC DON");
+  assert.strictEqual(buildCallNumber(holding), "Juvenile Fiction J FIC DON");
 });
 
-test("buildCallNumber: handles null prefix", () => {
+test("buildCallNumber: expands Dewey Decimal numbers", () => {
   const holding = {
     callPrefix: null,
     callClass: "814.54",
     callCutter: "Qui",
   } as HoldingsInfo;
 
-  assert.strictEqual(buildCallNumber(holding), "814.54 Qui");
+  assert.strictEqual(buildCallNumber(holding), "Literature 814.54 Qui");
 });
 
-test("buildCallNumber: handles only class and cutter", () => {
+test("buildCallNumber: expands collection codes", () => {
   const holding = {
     callPrefix: null,
     callClass: "J",
     callCutter: "DON",
   } as HoldingsInfo;
 
-  assert.strictEqual(buildCallNumber(holding), "J DON");
+  assert.strictEqual(buildCallNumber(holding), "Juvenile Fiction J DON");
 });
 
 test("buildCallNumber: handles empty parts", () => {
@@ -196,7 +196,7 @@ test("formatAsCSV: formats single book correctly", () => {
 
   assert.strictEqual(lines.length, 2);
   assert.strictEqual(lines[0], "Title,Author,Call#,Branch,Status,Notes");
-  assert.strictEqual(lines[1], 'The Very Hungry Caterpillar,"Carle, Eric.",JE Carle,Bowman,Available,');
+  assert.strictEqual(lines[1], 'The Very Hungry Caterpillar,"Carle, Eric.",Juvenile Easy JE Carle,Bowman,Available,');
 });
 
 test("formatAsCSV: formats multiple holdings per book", () => {
@@ -228,8 +228,8 @@ test("formatAsCSV: formats multiple holdings per book", () => {
   const lines = csv.split("\n");
 
   assert.strictEqual(lines.length, 3); // header + 2 holdings
-  assert.strictEqual(lines[1], 'Room on the Broom,"Donaldson, Julia.",J DON,Bowman,Available,');
-  assert.strictEqual(lines[2], 'Room on the Broom,"Donaldson, Julia.",J DON,Handley,Checked Out,');
+  assert.strictEqual(lines[1], 'Room on the Broom,"Donaldson, Julia.",Juvenile Fiction J DON,Bowman,Available,');
+  assert.strictEqual(lines[2], 'Room on the Broom,"Donaldson, Julia.",Juvenile Fiction J DON,Handley,Checked Out,');
 });
 
 test("formatAsCSV: formats book with clearer call number example", () => {
@@ -256,7 +256,7 @@ test("formatAsCSV: formats book with clearer call number example", () => {
   assert.strictEqual(lines.length, 2);
   assert.strictEqual(
     lines[1],
-    '"Brown Bear, Brown Bear, What Do You See?","Martin, Bill.",JE Martin,Bowman,Available,'
+    '"Brown Bear, Brown Bear, What Do You See?","Martin, Bill.",Juvenile Easy JE Martin,Bowman,Available,'
   );
 });
 
@@ -281,7 +281,7 @@ test("formatAsCSV: handles titles with commas", () => {
   const csv = formatAsCSV(results);
   const lines = csv.split("\n");
 
-  assert.strictEqual(lines[1], '"Title, The: A Subtitle",Author Name,FIC AUT,Bowman,Available,');
+  assert.strictEqual(lines[1], '"Title, The: A Subtitle",Author Name,Fiction FIC AUT,Bowman,Available,');
 });
 
 test("formatAsCSV: includes media type in notes", () => {
@@ -307,7 +307,7 @@ test("formatAsCSV: includes media type in notes", () => {
 
   assert.strictEqual(
     lines[1],
-    'Where the Wild Things Are,"Sendak, Maurice",AB SEN,Digital,Available,Audiobook'
+    'Where the Wild Things Are,"Sendak, Maurice",Audiobook AB SEN,Digital,Available,Audiobook'
   );
 });
 
