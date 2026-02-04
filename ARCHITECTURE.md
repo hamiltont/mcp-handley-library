@@ -46,102 +46,134 @@ This MCP server enables rapid library catalog searches for the Handley Regional 
 - No rate limiting or retry logic (fail fast design)
 
 ### Tool Handlers (`src/tools/*.ts`)
-- `search.ts` - Catalog search with field and sort options
-- `availability.ts` - Real-time circulation status checks
-- `details.ts` - Detailed bibliographic information
+- `find-books.ts` - Consolidated catalog search with availability checking
 
-Each tool is self-contained with its own Zod schema, API client calls, and response formatting.
+The tool is self-contained with its own Zod schema, calls multiple API endpoints, and aggregates results into a unified meta object.
 
 ## Data Flow
 
-### Current Flow (Inefficient)
-```
-User → LLM → search_catalog → [JSON blob of 10 books with all fields]
-            ↓
-            check_availability → [JSON blob of availability for 10 items]
-            ↓
-        LLM parses and presents
-```
+### Current Implementation
 
-**Problems:**
-- Two separate API calls exposed to LLM
-- Massive JSON blobs eat context window
-- Irrelevant fields returned (extent, rtype, hostBibliographicId, etc.)
-- Not optimized for context use
-
-### Target Flow (Efficient)
 ```
-User → LLM → find_books (consolidated tool) → [Markdown with only relevant fields]
-            ↓
-        LLM presents directly
+User → LLM → find_books (consolidated tool)
+                  ↓
+              Search API + Availability API
+                  ↓
+              Meta Object (in-memory aggregation)
+                  ↓
+              [Future: Format transformation layer]
+                  ↓
+              Output to LLM
 ```
 
-**Benefits:**
-- Single tool call
-- Markdown output (fewer tokens than JSON)
-- Only return: title, author, format, branch, availability, call number
-- Branch filtering built-in
-- Availability pre-fetched
+**Current state:** Single `find_books` tool that:
+1. Calls search API to get catalog results
+2. Calls availability API to get circulation status
+3. Aggregates ALL data into a unified "meta object" in memory
+4. Returns the complete aggregated structure (currently as JSON)
 
-## Token Optimization Strategy
+### Meta Object Design Pattern
 
-The upstream library API returns extremely verbose JSON responses with many irrelevant fields. Since LLM context is expensive and limited, the MCP server must aggressively optimize token usage.
+**Key Architectural Decision:** Separate data aggregation from output formatting.
 
-### Core Principles
+**Why this approach:**
 
-**1. Return only essential fields**
-- Title, author, format, branch, availability, call number
-- Strip: internal IDs, metadata, publication details, images, reviews
+1. **Single Source of Truth:** All data from multiple API calls is merged into one complete in-memory structure before any transformations. This ensures consistency and makes it easy to reason about what data is available.
 
-**2. Prefer markdown over JSON when possible**
-- Markdown tables are more compact than JSON for tabular data
-- Natural language summaries instead of structured metadata
-- Example: "✓ Available at Bowman" vs `{"available": true, "branchName": "Bowman"}`
+2. **Format Flexibility:** The meta object contains ALL fields from both APIs. Future format transformations (CSV, markdown, compact JSON) can each select which fields they need without re-fetching data or changing the aggregation logic.
 
-**3. Filter before returning**
-- Branch filtering: only show relevant locations
-- Availability filtering: optionally hide unavailable items
-- Reduces token count by eliminating irrelevant data
+3. **Composable Transformations:** New output formats can be added as pure transformation functions that take the meta object and return formatted output. No need to modify API calling logic or data aggregation.
 
-**4. Compact formatting**
-- Keep call numbers readable: "Adult Non-Fiction 814.54 Qui" matches physical library signage
-- Truncate verbose values where appropriate
+4. **Context-Aware Formatting:** Different use cases (at library vs. planning from home) may want different fields. The meta object has everything; transformations can omit fields based on context.
 
-**5. Reasonable limits**
-- Cap results at configurable limit (e.g., 20 books max)
-- No pagination - if you can't find it in first N results, it's not there
-- Fail fast on timeouts rather than retrying
+5. **Debugging and Testing:** Having the complete raw data structure makes it easy to debug issues and write tests without mocking API calls.
 
-### Example Optimization
-
-**Before (current JSON output):** ~1500 tokens for 10 results
-```json
+**Structure:**
+```typescript
 {
-  "resourceId": 2650073,
-  "title": "Loud and clear",
-  "author": "Quindlen, Anna.",
-  "format": "Book",
-  "publicationDate": "2004",
-  "isbn": "9781400061129",
-  "holdings": [
+  // All resource fields from search API
+  id, title, author, format, publicationDate, standardNumbers, etc.
+  
+  // Holdings array with merged availability data
+  holdingsInformations: [
     {
-      "branch": "Bowman",
-      "collection": "Adult Non-Fiction",
-      "callNumber": "814.54 Qui",
-      "barcode": "39925003470542"
+      // All holding fields from search API
+      branchName, collectionName, callNumber, barcode, etc.
+      
+      // Availability data merged in
+      availability: {
+        available, status, dueDate, statusCode, etc.
+      }
     }
   ]
 }
 ```
 
-**After (markdown output):** ~500 tokens for 10 results
-```markdown
-| Title | Author | Branch | Available | Call # |
-|-------|--------|--------|-----------|--------|
-| Loud and clear | Quindlen, Anna | Bowman | ✓ Yes | Adult Non-Fiction 814.54 Qui |
+**Future Evolution:**
+- Next iteration: Add CSV format transformation (63% token reduction)
+- Later: Add context-aware field filtering (omit call numbers for "planning" searches)
+- Later: Add bulk search result merging
+
+This pattern persists across all output format implementations.
+
+## Token Optimization Strategy
+
+The upstream library API returns extremely verbose JSON responses with many irrelevant fields. Since LLM context is expensive and limited, the MCP server must aggressively optimize token usage.
+
+### Current State
+
+**Phase 1 (Implemented):** Data aggregation without transformation
+- All API data aggregated into unified meta object
+- Full JSON returned to LLM (verbose but complete)
+- Branch and availability filtering reduce result count
+- Fixed 20-result limit
+
+**Phase 2 (Planned):** Format transformation layer
+- Meta object → CSV format (63% token reduction vs markdown)
+- Meta object → context-aware field filtering
+- Meta object → other compact formats as needed
+
+### Core Principles (for future transformations)
+
+**1. Separate aggregation from formatting**
+- Meta object contains ALL data from all APIs
+- Transformations select which fields to include
+- No data loss during transformation
+
+**2. Format selection based on token efficiency**
+- CSV: Most compact (testing showed 63% reduction vs markdown)
+- Flexible "Notes" column for edge cases
+- Example: `Title,Author,Call#,Branch,Status,Notes`
+
+**3. Context-aware field selection**
+- "At library" mode: include call numbers and branch (need to find on shelf)
+- "Planning" mode: omit call numbers (just checking availability for holds)
+- Status always included (core information)
+
+**4. Filter before formatting**
+- Branch filtering: only show relevant locations
+- Availability filtering: optionally hide unavailable items
+- Reduces token count by eliminating irrelevant results
+
+**5. Reasonable limits**
+- Fixed 20 results per search
+- No pagination - if you can't find it in first 20, refine query
+- Fail fast on timeouts rather than retrying
+
+### Example Future Optimization
+
+**Current (meta object JSON):** ~1500 tokens for 10 results (all fields)
+
+**After CSV transformation:** ~500 tokens for 10 results
+```csv
+Title,Author,Call#,Branch,Status,Notes
+Loud and clear,Quindlen Anna,814.54 Qui,Bowman,Available,
+Room on the Broom,Julia Donaldson,J DON,Bowman,Checked Out,
 ```
 
-**Savings:** ~60% reduction
+**Expected savings:** ~60-70% reduction
+
+This will be implemented in the next iteration.
 
 ## Security Model
 
@@ -229,18 +261,17 @@ src/
 ├── server.ts             # MCP server factory, tool registration
 ├── http.ts               # HTTP transport (Express + SSE)
 ├── lib/
-│   └── api.ts           # TLC LS2 PAC API client
+│   └── api.ts           # TLC LS2 PAC API client (searchCatalog, checkAvailability, getResourceDetails)
 └── tools/
-    ├── search.ts        # search_catalog tool
-    ├── availability.ts  # check_availability tool
-    └── details.ts       # get_book_details tool
+    └── find-books.ts    # find_books tool (consolidated search + availability)
 ```
 
 **Design Patterns:**
-- Tool handlers are self-contained modules
-- Each tool registers itself on the MCP server
-- API client is shared library (no tool-specific logic)
+- Meta object pattern: aggregate all API data before formatting
+- Tool handler is self-contained module
+- API client is shared library with pure functions for each endpoint
 - Transport selection at entry point (stdio vs HTTP)
+- Future: add format transformation layer between meta object and output
 
 ## Performance Considerations
 

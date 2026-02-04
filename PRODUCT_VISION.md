@@ -42,21 +42,22 @@ Currently, this requires multiple manual steps: web search for recommendations �
 ## Current State
 
 **Implemented:**
-- ✅ Three MCP tools: `search_catalog`, `check_availability`, `get_book_details`
+- ✅ Consolidated `find_books` MCP tool (search + availability in one call)
 - ✅ Both stdio and HTTP transports
 - ✅ TypeScript with Zod validation
 - ✅ Docker deployment configuration
 - ✅ Reverse-engineered API client for TLC LS2 PAC
 - ✅ Works with Claude Desktop and mobile Claude
+- ✅ Branch filtering (Bowman/Handley/Clarke County)
+- ✅ Availability filtering (available_only parameter)
+- ✅ Meta object architecture (aggregate all data, transform later)
 
 **Current Limitations:**
-- Tools are separate (search, then check availability) - requires two calls
-- Returns verbose JSON with many irrelevant fields
-- High token usage (~1500 tokens for 10 results)
-- No branch filtering
-- No availability filtering
+- Returns verbose JSON with all API fields (~1500 tokens for 10 results)
+- No format transformation layer yet (CSV, context-aware filtering planned)
 - No timeout handling
 - No authentication support (holds/history not possible yet)
+- Fixed 20 result limit (not configurable)
 
 ## Stop Criteria
 
@@ -86,20 +87,6 @@ Currently, this requires multiple manual steps: web search for recommendations �
 ## Brainstormed Next Features
 
 *These are brainstormed ideas for what we might work on next. They're not commitments or promises - they're possibilities we can evaluate as we go. The actual path forward will emerge through building and testing.*
-
-### Consolidated `find_books` Tool
-
-**What it does:** Merges `search_catalog` and `check_availability` into single tool call. Instead of requiring two separate tool calls (search, then check availability), combines both operations into one unified workflow.
-
-**Why valuable:** Cuts tool calls in half, matches actual user workflow (no one searches without checking availability), reduces tool invocation overhead.
-
-**Complexity:** Medium - requires refactoring existing tools to combine the two API calls internally.
-
-**When we build this, check:**
-- Does the combined tool handle all the use cases of the individual tools?
-- Do branch filters work intuitively?
-- Is error handling clear when either API call fails?
-- Should we keep the individual tools for advanced use cases or deprecate them?
 
 ### CSV Output Format
 
