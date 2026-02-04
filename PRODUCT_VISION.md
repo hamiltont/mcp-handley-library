@@ -120,19 +120,6 @@ Currently, this requires multiple manual steps: web search for recommendations â
 - Should we support per-query parameters (different branches, availability filters)?
 - How to communicate queryâ†’result mapping in output?
 
-### Availability Filtering Parameter
-
-**What it does:** Adds `available_only: boolean` parameter to `find_books`. When true, only returns books that are currently available (not checked out).
-
-**Why valuable:** Real-time "I'm here now" searches need to filter out unavailable books. Planning searches want to see everything for holds.
-
-**Complexity:** Simple - boolean filter on availability status.
-
-**When we build this, check:**
-- Does LLM understand when to use this based on context ("available now" vs general search)?
-- Should default be true or false?
-- What happens if no books match after filtering?
-
 ### Media Type Awareness
 
 **What it does:** 
