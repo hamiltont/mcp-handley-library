@@ -335,32 +335,6 @@ Currently, this requires multiple manual steps: web search for recommendations â
 
 ## Implemented Features
 
-### Server-Side Branch Filtering Fix (Feb 2026)
-
-**Problem:** Branch filtering was completely broken. The API client always sent empty `branchFilters: []`, causing all searches to return results from ALL branches. Then client-side filtering would check only the first 20 results. For smaller branches like Clarke, this meant searches would report "Found X results at Clarke" (showing system-wide count) but return 0 results because Clarke items weren't in the first 20.
-
-**Implementation:**
-- Added `branchFilters?: string[]` parameter to `searchCatalog()` function in `src/lib/api.ts`
-- Created branch name to ID mapping: Handley="1", Bowman="2", Clarke="3"
-- Updated `searchAndMerge()` to pass branch filters through to API
-- Fixed branch name mismatch: Changed tool schemas from "Clarke County" to "Clarke" (matching API)
-- Added comprehensive tests including online tests against real API
-
-**Results:**
-- Branch filtering now works correctly for all branches, including smaller ones
-- API returns accurate `totalHits` for branch-filtered searches
-- Test results show correct filtering:
-  - No filters: Returns all 3 branches (37 total holdings for Julia Donaldson)
-  - Bowman only: Returns 22 Bowman holdings
-  - Clarke only: Returns 6 Clarke holdings (was broken before - would return 0)
-  - Multiple branches: Returns only specified branches
-
-**Key learnings:**
-- Always verify API parameter names match what the server expects
-- Server-side filtering is more reliable than client-side filtering on partial results
-- Online tests against real API are critical for catching integration issues
-- Branch name consistency between API and tool schemas prevents subtle bugs
-
 ### Tool Split: Planning vs Real-Time Mode (Feb 2026)
 
 **Implementation approach:**
@@ -413,40 +387,6 @@ Currently, this requires multiple manual steps: web search for recommendations â
 - Testing pure functions is much easier than testing full tool handlers
 - Mode-specific behavior via parameters (not conditionals) keeps code clean
 - Real sample data in tests caught edge cases we wouldn't have thought to mock
-
-### Context-Aware Field Filtering (Feb 2026)
-
-**Problem:** The original tool split omitted call numbers in planning mode, but still included Branch and Status columns in real-time mode. This was inefficient because:
-- In real-time mode, the branch is a required parameter, so showing it in every row is redundant
-- In real-time mode, `availableOnly: true` is hardcoded, so Status is always "Available" (redundant)
-- Initial misunderstanding: Assumed planning mode should omit branch (wrong - users need to know which location has the book)
-
-**Implementation approach:**
-- Added `includeBranch` and `includeStatus` options to `FormatOptions` interface
-- Updated `formatAsCSV()` to conditionally include/omit columns based on options
-- Planning mode: `Title,Author,Branch,Status,Notes` (keep branch to know location, keep status for hold planning)
-- Real-time mode: `Title,Author,Call#,Notes` (omit redundant branch/status, keep call numbers for navigation)
-- All options default to `true` for backward compatibility
-
-**Testing:**
-- Added 7 new tests for `includeBranch` and `includeStatus` options
-- E2E tests verified actual outputs match expected formats
-- Token savings tests confirmed ~17% reduction in real-time mode
-
-**Results:**
-- **Token savings:** 17.2% reduction for real-time mode (e.g., 38 tokens saved for Pete the Cat search)
-- **Planning mode unchanged:** Still shows Branch and Status (critical information for hold planning)
-- **Real-time mode optimized:** Removes redundant information that user already specified or that's constant
-- **Flexible architecture:** Dynamic CSV column construction makes adding future column options trivial
-
-**Key learnings:**
-- **User workflow understanding is critical:** Initial design assumed wrong workflow priorities. Direct user feedback revealed:
-  - Planning mode: Need branch (to know location) but not call numbers (not navigating shelves)
-  - Real-time mode: Need call numbers (navigating shelves) but not branch (already specified) or status (always available)
-- **Question assumptions:** The feature description in the vision document was incorrect. User's actual workflow knowledge trumps written specs.
-- **Redundancy = token waste:** When a field is user-specified (branch parameter) or always constant (status=available), omit it from output.
-- **Options design:** Boolean flags for each column (`includeCallNumbers`, `includeBranch`, `includeStatus`) provides maximum flexibility with clear intent.
-- **E2E testing reveals reality:** Unit tests passed, but E2E verification with real queries showed the actual token savings (17%) and confirmed workflow assumptions.
 
 ### Result Deduplication (Feb 2026)
 
