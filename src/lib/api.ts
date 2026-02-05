@@ -150,6 +150,13 @@ export type ResourceDetailsResponse = DetailField[];
 
 // --- API Functions ---
 
+// Map user-friendly branch names to API branch identifiers
+const BRANCH_ID_MAP: Record<string, string> = {
+  "Handley": "1",
+  "Bowman": "2",
+  "Clarke": "3",
+};
+
 /**
  * Search the library catalog
  */
@@ -158,7 +165,8 @@ export async function searchCatalog(
   field: SearchField = "AnyField",
   limit: number = 12,
   startIndex: number = 0,
-  sortCriteria: SortCriteria = "Relevancy"
+  sortCriteria: SortCriteria = "Relevancy",
+  branchFilters?: string[]
 ): Promise<SearchResponse> {
   // Build the search term object - note it gets double-encoded as JSON string
   const searchTermObject: SearchTermObject = {
@@ -173,12 +181,17 @@ export async function searchCatalog(
     ],
   };
 
+  // Map branch names to IDs for API
+  const apiBranchFilters = branchFilters
+    ? branchFilters.map((name) => BRANCH_ID_MAP[name]).filter(Boolean)
+    : [];
+
   const requestBody = {
     searchTerm: JSON.stringify(searchTermObject), // Double-encoded JSON
     startIndex,
     hitsPerPage: limit,
     facetFilters: [],
-    branchFilters: [],
+    branchFilters: apiBranchFilters,
     sortCriteria,
     targetAudience: "",
     addToHistory: false,

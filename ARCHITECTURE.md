@@ -207,8 +207,8 @@ The upstream library API returns extremely verbose JSON responses with many irre
 - Status always included (core availability information)
 
 **4. Pre-filtering before formatting**
-- Branch filtering: only show relevant locations
-- Availability filtering: optionally hide unavailable items
+- Branch filtering: Server-side via API (efficient, accurate result counts)
+- Availability filtering: Client-side (API doesn't support this filter)
 - Result limits (20 per search) prevent overwhelming the LLM
 - Reduces token count by eliminating irrelevant results before formatting
 
@@ -314,6 +314,7 @@ Exposed on port 3000, behind home media server gateway.
 - Required headers: `Ls2pac-config-name: ysm`, `Ls2pac-config-type: pac`, `X-Requested-With: XMLHttpRequest`
 - No API key required (public catalog)
 - No published rate limits (be respectful)
+- **Branch filtering**: Supported via `branchFilters` array of branch IDs ("1"=Handley, "2"=Bowman, "3"=Clarke)
 
 ### Endpoints Used
 1. **POST /search** - Catalog search (double-encoded JSON searchTerm)
@@ -322,6 +323,7 @@ Exposed on port 3000, behind home media server gateway.
 
 ### Known Quirks
 - `searchTerm` field requires JSON-stringified object inside request JSON
+- `branchFilters` expects array of branch ID strings, not branch names
 - Cache-busting `?_=timestamp` parameter may help (optional)
 - Status codes: `"I"` = In, `"O"` = Out (likely)
 - No CORS headers (server-side only, not browser-compatible)
@@ -405,6 +407,7 @@ src/
 
 **Test Coverage:**
 - `test/book-finder.test.ts` - Core search orchestration functions (9 tests)
+- `test/branch-filtering.test.ts` - Branch filtering unit and integration tests (10 tests, includes online API tests)
 - `test/deduplicator.test.ts` - Deduplication logic with mode-specific behavior (17 tests)
 - `test/csv-formatter.test.ts` - CSV formatting with mode-specific columns (24 tests)
 - `test/call-number-expander.test.ts` - Call number expansion (52 tests)
@@ -412,7 +415,7 @@ src/
 - `test/deduplicator-integration.test.ts` - Full deduplication with real sample data (3 tests)
 - `test/search-catalog-integration.test.ts` - Tool integration verification (3 tests)
 
-**Total:** 105 tests, all passing
+**Total:** 115 tests, all passing
 
 **Key Testing Principles:**
 - Test transformations, not API calls (no mocking needed for most tests)

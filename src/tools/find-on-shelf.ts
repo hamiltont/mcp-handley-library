@@ -26,7 +26,7 @@ const SearchFieldSchema = z
   .describe("Field to search in");
 
 const BranchSchema = z
-  .enum(["Bowman", "Handley", "Clarke County"])
+  .enum(["Bowman", "Handley", "Clarke"])
   .describe("Branch you are currently at");
 
 // Map user-friendly field names to API field names

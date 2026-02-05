@@ -28,8 +28,15 @@ export async function searchAndMerge(
 ): Promise<SearchAndMergeResult> {
   const { query, apiField, limit, branches, availableOnly } = options;
 
-  // Step 1: Search catalog
-  const searchResponse = await searchCatalog(query, apiField, limit, 0, "Relevancy");
+  // Step 1: Search catalog with branch filters (server-side filtering)
+  const searchResponse = await searchCatalog(
+    query,
+    apiField,
+    limit,
+    0,
+    "Relevancy",
+    branches && branches.length > 0 ? branches : undefined
+  );
 
   if (searchResponse.totalHits === 0) {
     return { resources: [], totalHits: 0 };

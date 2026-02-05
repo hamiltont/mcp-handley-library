@@ -26,7 +26,7 @@ const SearchFieldSchema = z
   .describe("Field to search in");
 
 const BranchSchema = z
-  .array(z.enum(["Bowman", "Handley", "Clarke County"]))
+  .array(z.enum(["Bowman", "Handley", "Clarke"]))
   .optional()
   .describe("Filter to specific branches");
 

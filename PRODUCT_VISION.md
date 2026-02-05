@@ -53,18 +53,16 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - ✅ Expanded call numbers with human-readable descriptions (J → Juvenile Fiction, 814.54 → Literature)
 - ✅ Both stdio and HTTP transports
 - ✅ TypeScript with Zod validation
-- ✅ Comprehensive test suite (105 passing tests with real API data)
+- ✅ Comprehensive test suite (115 passing tests with real API data)
 - ✅ Docker deployment configuration
 - ✅ Reverse-engineered API client for TLC LS2 PAC
 - ✅ Works with Claude Desktop and mobile Claude
-- ✅ Branch filtering (multiple branches for planning, single branch for real-time)
+- ✅ **Server-side branch filtering** - API filters by branch before returning results (fixed Feb 2026)
 - ✅ Availability filtering (optional for planning, always true for real-time)
 - ✅ Meta object architecture (aggregate all data, transform later)
 
-**Known Critical Bugs (MUST FIX ASAP):**
-- ⚠️ **Branch filters not sent to API** - `searchCatalog()` always sends empty `branchFilters: []` to the API, regardless of user-specified branch filters. This causes ALL searches to return results from ALL branches.
-- ⚠️ **Misleading result counts with branch filtering** - Because we fetch all branches then filter client-side, we only check the first 20 results (first page). If the requested branch's items appear later in results, we report the total system-wide count but return 0 results. Example: "Found 410 result(s) at Clarke County but none are currently available" - the 410 is system-wide, we only checked first 20 results, none were at Clarke County.
-- ⚠️ **Impact:** Makes branch filtering nearly useless for smaller branches (Clarke County, Bowman). Users think books exist at their branch when they're actually at different branches. This affects both `search_catalog` and `find_on_shelf` tools.
+**Known Issues:**
+- None currently
 
 **Current Limitations:**
 - No timeout handling
@@ -101,45 +99,6 @@ Currently, this requires multiple manual steps: web search for recommendations �
 
 *These are brainstormed ideas for what we might work on next. They're not commitments or promises - they're possibilities we can evaluate as we go. The actual path forward will emerge through building and testing.*
 
-### Fix Branch Filtering (URGENT - Currently Broken)
-
-**What it does:** 
-- Add `branchFilters` parameter to `searchCatalog()` API function in `src/lib/api.ts`
-- Pass user-specified branch filters through to the API request body
-- Let the API do server-side filtering instead of client-side post-filtering
-
-**Why critical:** 
-- Current implementation breaks branch filtering entirely for smaller branches
-- Users see misleading messages like "Found 410 result(s) at Clarke County" when those 410 results are system-wide, not branch-specific
-- Only the first 20 results are checked, so if Clarke County items appear later, they're never seen
-- Makes both `search_catalog` and `find_on_shelf` tools unreliable
-- This is blocking the core use case: finding books at a specific branch
-
-**Root cause:**
-- Line 181 in `src/lib/api.ts` hardcodes `branchFilters: []` 
-- Function signature doesn't accept branch filters as parameter
-- Client-side filtering in `book-finder.ts` happens AFTER fetching first page of all results
-
-**Fix approach:**
-1. Add `branchFilters?: string[]` parameter to `searchCatalog()` function
-2. Map user-friendly branch names to API branch identifiers (discover correct format)
-3. Pass `branchFilters` to API request body
-4. Update `book-finder.ts` to pass branch filters to API call
-5. Keep client-side availability filtering (API may not support that)
-6. Test with Clarke County queries to verify fixes
-
-**Complexity:** Medium - requires:
-- Discovering correct API branch filter format/identifiers
-- Mapping "Bowman"/"Handley"/"Clarke County" to API values
-- Testing to ensure API respects branch filters
-- Verifying totalHits is now branch-specific
-
-**When we build this, check:**
-- What are the exact branch identifier values the API expects?
-- Does API return accurate totalHits when branch filtered?
-- Should we keep client-side filtering as fallback if API filtering fails?
-- Do both tools (`search_catalog` and `find_on_shelf`) work correctly?
-- Test edge case: branch filter + available_only filter together
 
 ### Title/Author Normalization for Deduplication
 
@@ -398,6 +357,32 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - Should we provide retry hints?
 
 ## Implemented Features
+
+### Server-Side Branch Filtering Fix (Feb 2026)
+
+**Problem:** Branch filtering was completely broken. The API client always sent empty `branchFilters: []`, causing all searches to return results from ALL branches. Then client-side filtering would check only the first 20 results. For smaller branches like Clarke, this meant searches would report "Found X results at Clarke" (showing system-wide count) but return 0 results because Clarke items weren't in the first 20.
+
+**Implementation:**
+- Added `branchFilters?: string[]` parameter to `searchCatalog()` function in `src/lib/api.ts`
+- Created branch name to ID mapping: Handley="1", Bowman="2", Clarke="3"
+- Updated `searchAndMerge()` to pass branch filters through to API
+- Fixed branch name mismatch: Changed tool schemas from "Clarke County" to "Clarke" (matching API)
+- Added comprehensive tests including online tests against real API
+
+**Results:**
+- Branch filtering now works correctly for all branches, including smaller ones
+- API returns accurate `totalHits` for branch-filtered searches
+- Test results show correct filtering:
+  - No filters: Returns all 3 branches (37 total holdings for Julia Donaldson)
+  - Bowman only: Returns 22 Bowman holdings
+  - Clarke only: Returns 6 Clarke holdings (was broken before - would return 0)
+  - Multiple branches: Returns only specified branches
+
+**Key learnings:**
+- Always verify API parameter names match what the server expects
+- Server-side filtering is more reliable than client-side filtering on partial results
+- Online tests against real API are critical for catching integration issues
+- Branch name consistency between API and tool schemas prevents subtle bugs
 
 ### Tool Split: Planning vs Real-Time Mode (Feb 2026)
 
