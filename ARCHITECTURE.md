@@ -59,6 +59,8 @@ User → LLM → find_books (consolidated tool)
                   ↓
               Meta Object (in-memory aggregation)
                   ↓
+              Deduplication (consolidate copies)
+                  ↓
               CSV Format Transformation
                   ↓
               Output to LLM
@@ -68,8 +70,9 @@ The `find_books` tool follows this flow:
 1. Calls search API to get catalog results
 2. Calls availability API to get circulation status
 3. Aggregates ALL data into a unified "meta object" in memory
-4. Transforms to CSV format: `Title,Author,Call#,Branch,Status,Notes`
-5. Returns compact CSV output (~60-70% fewer tokens than JSON)
+4. **Deduplicates results** (merge multiple copies, consolidate branches)
+5. Transforms to CSV format: `Title,Author,Call#,Branch,Status,Notes`
+6. Returns compact CSV output (~60-70% fewer tokens than JSON, additional 40-60% reduction from deduplication for popular books)
 
 ### Meta Object Design Pattern
 
@@ -108,11 +111,20 @@ The `find_books` tool follows this flow:
 }
 ```
 
+**Deduplication:**
+- Automatically consolidates duplicate holdings before CSV formatting
+- Same branch, multiple copies: Single row with quantity notes (e.g., "3 copies (1 available)")
+- Multiple branches: Single row with branch="Multiple" and details in Notes (e.g., "2 at Bowman (1 available), 1 at Handley")
+- Status prioritization: "Available" if ANY copy is available, otherwise "Checked Out"
+- Preserves different editions (different call numbers remain separate)
+- Token savings: 40-60% reduction for popular books (e.g., Harry Potter: 106 rows → 43 rows)
+- Implementation in `src/lib/deduplicator.ts`
+
 **CSV Transformation:**
 - 60-70% token reduction vs JSON
 - Format: `Title,Author,Call#,Branch,Status,Notes`
 - Call numbers expanded with human-readable descriptions (see Call Number Expansion below)
-- Smart Notes column (empty for standard books, populated for edge cases)
+- Smart Notes column (empty for standard books, populated for edge cases, quantity info, and branch details)
 - Proper CSV escaping for special characters
 
 **Call Number Expansion:**
@@ -122,7 +134,7 @@ The `find_books` tool follows this flow:
 - Improves clarity without losing shelf navigation information
 - Implementation in `src/lib/call-number-expander.ts`
 
-This pattern (meta object → transformation) enables adding new output formats without modifying API calling or aggregation logic. See `src/lib/csv-formatter.ts` for transformation implementation.
+This pattern (meta object → deduplication → transformation) enables adding new output formats without modifying API calling or aggregation logic. See `src/lib/csv-formatter.ts` and `src/lib/deduplicator.ts` for implementation.
 
 ## Token Optimization Strategy
 
@@ -276,9 +288,10 @@ src/
 ├── lib/
 │   ├── api.ts                   # TLC LS2 PAC API client (searchCatalog, checkAvailability, getResourceDetails)
 │   ├── call-number-expander.ts  # Call number expansion logic (collection codes, Dewey Decimal)
+│   ├── deduplicator.ts          # Result deduplication logic (merge copies, consolidate branches)
 │   └── csv-formatter.ts         # CSV transformation functions (formatAsCSV, buildCallNumber, buildNotes)
 └── tools/
-    └── find-books.ts            # find_books tool (consolidated search + availability + CSV output)
+    └── find-books.ts            # find_books tool (consolidated search + availability + deduplication + CSV output)
 ```
 
 **Design Patterns:**

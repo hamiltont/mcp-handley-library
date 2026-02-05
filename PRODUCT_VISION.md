@@ -44,10 +44,11 @@ Currently, this requires multiple manual steps: web search for recommendations �
 **Implemented:**
 - ✅ Consolidated `find_books` MCP tool (search + availability in one call)
 - ✅ CSV output format with flexible Notes column (~60-70% token reduction vs JSON)
+- ✅ Result deduplication (automatic consolidation of duplicate holdings, 40-60% additional token reduction for popular books)
 - ✅ Expanded call numbers with human-readable descriptions (J → Juvenile Fiction, 814.54 → Literature)
 - ✅ Both stdio and HTTP transports
 - ✅ TypeScript with Zod validation
-- ✅ Comprehensive test suite (70 passing tests with real API data)
+- ✅ Comprehensive test suite (84 passing tests with real API data)
 - ✅ Docker deployment configuration
 - ✅ Reverse-engineered API client for TLC LS2 PAC
 - ✅ Works with Claude Desktop and mobile Claude
@@ -89,6 +90,51 @@ Currently, this requires multiple manual steps: web search for recommendations �
 
 *These are brainstormed ideas for what we might work on next. They're not commitments or promises - they're possibilities we can evaluate as we go. The actual path forward will emerge through building and testing.*
 
+### Title/Author Normalization for Deduplication
+
+**What it does:** Normalize title, author, library name, and status to lowercase internally before grouping for deduplication. Present any of the original capitalization variations to the user in output.
+
+**Why valuable:** Library API returns inconsistent capitalization (e.g., "Harry Potter and the chamber of secrets" vs "Harry Potter and the Chamber of Secrets"). Current deduplication treats these as different books. Normalization would merge them correctly while preserving original formatting for display.
+
+**Complexity:** Simple - lowercase string comparison in deduplicator, but needs careful testing
+
+**When we build this, check:**
+- Which original capitalization to preserve? (First found? Most common? Best formatted?)
+- Does this introduce any edge cases where legitimately different books get merged?
+- Should we normalize punctuation too? (e.g., "Harry Potter & the..." vs "Harry Potter and the...")
+
+### Real-Time vs Planning Mode Split
+
+**What it does:** Two separate tools (or modes) for different use cases:
+1. **`find_books_now`** (real-time): Requires library parameter, assumes `available_only=true`, returns call numbers. Deduplication does NOT merge across different call numbers (different shelf locations matter).
+2. **`find_books`** (planning): Optional library/available filters, omits call numbers, merges across call numbers (user doesn't care about shelf location, just "can I get this book?").
+
+**Why valuable:** 
+- Simplifies each tool's logic (single responsibility)
+- Clearer intent for LLM ("I'm at the library" vs "I'm planning from home")
+- Better unit testing (less branching, fewer edge cases per tool)
+- Call number deduplication behavior depends on use case:
+  - Real-time: KEEP different call numbers separate (adult vs juvenile section matters for navigation)
+  - Planning: MERGE different call numbers (don't care about section, just availability)
+
+**Complexity:** Medium-High - requires:
+- Splitting current `find_books` tool into two
+- Separate Zod schemas for each
+- Separate CSV formatting logic (with/without call numbers)
+- Documentation updates for LLM to understand when to use each
+- Migration path for existing users
+
+**When we build this, check:**
+- How does LLM decide which tool to use? Clear in tool descriptions?
+- Should we keep `find_books` as a "smart" wrapper that delegates to the right tool?
+- What happens if user is at library but forgets to use real-time tool?
+- Unit testing strategy - can we share test fixtures between tools?
+- Does omitting call numbers actually save meaningful tokens?
+
+**Current concern:** `find_books` is growing complex with multiple responsibilities. Deduplication logic has different behavior needs depending on context (real-time vs planning). May be time to split for better maintainability and testing.
+
+**Testing gap identified:** No integration tests for `find_books` tool itself using sample data from `fetch-sample-data`. Current tests cover individual components (deduplicator, CSV formatter, call number expander) but not the full end-to-end flow through the tool handler.
+
 ### Bulk Book Search
 
 **What it does:** New tool `bulk_find_books` that accepts multiple search queries (up to 20) and returns merged results. Results are organized by ordinal: all 1st results from each search, then all 2nd results, then all 3rd results, etc. Each search returns top 3-4 results maximum.
@@ -119,43 +165,6 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - Default results-per-query: 3-4 (token efficient) or up to 20 (comprehensive)?
 - Should we support per-query parameters (different branches, availability filters)?
 - How to communicate query→result mapping in output?
-
-### Result Deduplication
-
-**What it does:**
-- Deterministically clean up duplicate entries in search results
-- Remove 100% identical rows (complete duplicates)
-- Deduplicate rows that differ only in status column
-- When deduplicating, prefer keeping rows with `status=Available`
-- Preserve rows that differ by branch/library name (these represent different physical copies)
-
-**Why valuable:** Popular books often have many copies across branches, leading to cluttered results with many near-identical entries. For example, "Harry Potter and the Prisoner of Azkaban" might return 8 rows where 2-3 are at Handley, 4 are at Bowman, and one is at Clarke. The user wants to know:
-- Is it available at their preferred branch? → Keep branch-specific entries
-- What's the overall availability status? → Deduplicate status variations, prefer "Available"
-
-Real-world example: Harry Potter searches return 40+ rows with significant duplication. Cleaning this up would improve readability and reduce token usage.
-
-**Complexity:** Medium - requires:
-- Row comparison logic (which fields constitute a "duplicate"?)
-- Deterministic sort/selection when multiple copies exist
-- Clear rules for when to merge vs keep separate
-- Testing with real-world messy data (Harry Potter, Julia Donaldson)
-- Balancing deduplication aggressiveness vs information loss
-
-**When we build this, check:**
-- Should deduplication happen automatically or be a tool parameter (`deduplicate=true`)?
-- What's the exact precedence for keeping rows? (Available > Checked Out, or more nuanced?)
-- How to handle rows identical except for due dates? (Both checked out, different dates)
-- Should we preserve count information? ("3 copies at Bowman: 1 available, 2 checked out")
-- Does this play well with Notes column? (Identical rows with different notes)
-- What if call numbers differ slightly but everything else is the same?
-- Token savings measurement: how much does this reduce typical results?
-
-**Open questions:**
-- Should we merge information into a single row ("3 copies: 2 at Bowman, 1 at Clarke") or just remove true duplicates?
-- Is there value in showing "5 copies of this book exist" even if all are checked out?
-- How aggressive should we be? Remove all but one per unique (title, author, call#, branch) combo?
-- Should identical audiobook copies be deduplicated separately from physical books?
 
 ### Media Type Awareness
 
@@ -368,6 +377,39 @@ Real-world example: Harry Potter searches return 40+ rows with significant dupli
 - Are suggestions helpful or annoying?
 - Does LLM pass through errors correctly?
 - Should we provide retry hints?
+
+## Implemented Features
+
+### Result Deduplication (Feb 2026)
+
+**Implementation approach:**
+- Automatic deduplication applied after meta object aggregation, before CSV formatting
+- Operates on structured data (meta objects) rather than formatted strings
+- Fits naturally into existing "aggregate all data, transform later" architecture
+
+**Deduplication strategy:**
+1. **Same branch, multiple copies:** Merge into single row with quantity notes
+   - Example: "3 copies (1 available)" or "2 copies (all checked out)"
+   - Prefer keeping holding with `available=true` status
+2. **Multiple branches:** Create single row with `branch="Multiple"`
+   - Example Notes: "2 at Bowman (1 available), 4 at Handley (1 available), 2 at Clarke"
+   - Status is "Available" if ANY branch has an available copy
+3. **Different editions:** Preserve separately (different call numbers = different books)
+
+**Results:**
+- **Token savings:** 40-60% reduction for popular books
+  - Harry Potter: 106 rows → 43 rows (59.4% reduction)
+  - Dog Man: 166 rows → 26 rows (84% reduction)
+  - Pete the Cat: 139 rows → 34 rows (76% reduction)
+- **Always automatic:** No configuration needed, works transparently
+- **Preserves information:** Quantity and location details in Notes column
+
+**Key learnings:**
+- Operating on meta objects (before formatting) was the right choice for maintainability
+- "Multiple" branch approach works well - clear and compact
+- Notes column flexibility proved valuable for quantity/branch details
+- Real-world data (Harry Potter) validated the approach - massive token savings
+- No need for configuration parameter - automatic behavior works for all cases
 
 ## Technical Decisions
 
