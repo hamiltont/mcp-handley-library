@@ -11,6 +11,7 @@ import {
     escapeCsvField,
     formatAsCSV,
     getStatus,
+    type FormatOptions,
     type MergedHolding,
     type MergedResource,
 } from "../src/lib/csv-formatter.js";
@@ -338,4 +339,170 @@ test("formatAsCSV: handles missing fields gracefully", () => {
   const lines = csv.split("\n");
 
   assert.strictEqual(lines[1], ",,,,Unknown,");
+});
+
+// --- Test: includeCallNumbers option (planning vs real-time mode) ---
+
+test("formatAsCSV: includeCallNumbers=true (default) - includes Call# column", () => {
+  const results: MergedResource[] = [
+    {
+      id: 1,
+      shortTitle: "Test Book",
+      shortAuthor: "Test Author",
+      format: "Book",
+      holdingsInformations: [
+        {
+          barcode: "123",
+          branchName: "Bowman",
+          collectionName: "Fiction",
+          callPrefix: "J",
+          callClass: "DON",
+          callCutter: "TEST",
+          availability: {
+            itemIdentifier: "123",
+            available: true,
+            status: "Available",
+            statusCode: "I",
+          },
+        } as MergedHolding,
+      ],
+    } as MergedResource,
+  ];
+
+  const csv = formatAsCSV(results);
+  const lines = csv.split("\n");
+
+  assert.strictEqual(lines[0], "Title,Author,Call#,Branch,Status,Notes");
+  assert.ok(lines[1].includes("Juvenile Fiction J DON TEST"));
+});
+
+test("formatAsCSV: includeCallNumbers=false (planning mode) - omits Call# column", () => {
+  const results: MergedResource[] = [
+    {
+      id: 1,
+      shortTitle: "Test Book",
+      shortAuthor: "Test Author",
+      format: "Book",
+      holdingsInformations: [
+        {
+          barcode: "123",
+          branchName: "Bowman",
+          collectionName: "Fiction",
+          callPrefix: "J",
+          callClass: "DON",
+          callCutter: "TEST",
+          availability: {
+            itemIdentifier: "123",
+            available: true,
+            status: "Available",
+            statusCode: "I",
+          },
+        } as MergedHolding,
+      ],
+    } as MergedResource,
+  ];
+
+  const csv = formatAsCSV(results, { includeCallNumbers: false });
+  const lines = csv.split("\n");
+
+  assert.strictEqual(lines[0], "Title,Author,Branch,Status,Notes");
+  assert.strictEqual(lines[1], "Test Book,Test Author,Bowman,Available,");
+  assert.ok(!lines[1].includes("DON"));
+});
+
+test("formatAsCSV: includeCallNumbers=false - saves tokens (shorter output)", () => {
+  const results: MergedResource[] = [
+    {
+      id: 1,
+      shortTitle: "Room on the Broom",
+      shortAuthor: "Julia Donaldson",
+      format: "Book",
+      holdingsInformations: [
+        {
+          barcode: "123",
+          branchName: "Bowman",
+          collectionName: "Fiction",
+          callPrefix: "J",
+          callClass: "DON",
+          callCutter: "ROOM",
+          availability: {
+            itemIdentifier: "123",
+            available: true,
+            status: "Available",
+            statusCode: "I",
+          },
+        } as MergedHolding,
+      ],
+    } as MergedResource,
+  ];
+
+  const csvWithCallNumbers = formatAsCSV(results, { includeCallNumbers: true });
+  const csvWithoutCallNumbers = formatAsCSV(results, { includeCallNumbers: false });
+
+  // Planning mode output should be shorter
+  assert.ok(csvWithoutCallNumbers.length < csvWithCallNumbers.length);
+  
+  // Rough token savings calculation (1 token ≈ 4 chars)
+  const charSavings = csvWithCallNumbers.length - csvWithoutCallNumbers.length;
+  const estimatedTokenSavings = charSavings / 4;
+  
+  // Should save at least a few tokens per row
+  assert.ok(estimatedTokenSavings > 3, `Expected significant token savings, got ${estimatedTokenSavings}`);
+});
+
+test("formatAsCSV: includeCallNumbers=false - works with multiple resources", () => {
+  const results: MergedResource[] = [
+    {
+      id: 1,
+      shortTitle: "Book 1",
+      shortAuthor: "Author 1",
+      format: "Book",
+      holdingsInformations: [
+        {
+          barcode: "123",
+          branchName: "Bowman",
+          collectionName: "Fiction",
+          callPrefix: "J",
+          callClass: "A",
+          callCutter: "ONE",
+          availability: {
+            itemIdentifier: "123",
+            available: true,
+            status: "Available",
+            statusCode: "I",
+          },
+        } as MergedHolding,
+      ],
+    } as MergedResource,
+    {
+      id: 2,
+      shortTitle: "Book 2",
+      shortAuthor: "Author 2",
+      format: "Book",
+      holdingsInformations: [
+        {
+          barcode: "456",
+          branchName: "Handley",
+          collectionName: "Fiction",
+          callPrefix: "J",
+          callClass: "B",
+          callCutter: "TWO",
+          availability: {
+            itemIdentifier: "456",
+            available: false,
+            status: "Checked Out",
+            statusCode: "O",
+          },
+        } as MergedHolding,
+      ],
+    } as MergedResource,
+  ];
+
+  const csv = formatAsCSV(results, { includeCallNumbers: false });
+  const lines = csv.split("\n");
+
+  assert.strictEqual(lines.length, 3); // Header + 2 rows
+  assert.strictEqual(lines[0], "Title,Author,Branch,Status,Notes");
+  assert.strictEqual(lines[1], "Book 1,Author 1,Bowman,Available,");
+  assert.strictEqual(lines[2], "Book 2,Author 2,Handley,Checked Out,");
 });

@@ -45,34 +45,77 @@ This MCP server enables rapid library catalog searches for the Handley Regional 
 - Uses native fetch (Node 18+)
 - No rate limiting or retry logic (fail fast design)
 
-### Tool Handlers (`src/tools/*.ts`)
-- `find-books.ts` - Consolidated catalog search with availability checking
+### Core Search Logic (`src/lib/book-finder.ts`)
+- Shared search orchestration for both tools
+- `searchAndMerge()` - Calls search API + availability API, merges data into meta objects
+- `applyBranchFilter()` - Filters resources to specified branches
+- `applyAvailabilityFilter()` - Filters to available items only
+- Pure functions for testability and DRY
 
-The tool is self-contained with its own Zod schema, calls multiple API endpoints, and aggregates results into a unified meta object.
+### Tool Handlers (`src/tools/*.ts`)
+- `search-catalog.ts` - Planning mode: check availability for holds across branches
+- `find-on-shelf.ts` - Real-time mode: locate items with call numbers at current branch
+
+Both tools use shared `book-finder.ts` logic with different parameters:
+- **Planning mode** (`search_catalog`): Merges call numbers, omits Call# column, optional branch filter
+- **Real-time mode** (`find_on_shelf`): Preserves call numbers, includes Call# column, required single branch
 
 ## Data Flow
 
+### Planning Mode (`search_catalog`)
 ```
-User → LLM → find_books (consolidated tool)
+User → LLM → search_catalog
+                  ↓
+              searchAndMerge() [book-finder.ts]
                   ↓
               Search API + Availability API
                   ↓
               Meta Object (in-memory aggregation)
                   ↓
-              Deduplication (consolidate copies)
+              Branch/Availability Filters
                   ↓
-              CSV Format Transformation
+              Deduplication (mergeCallNumbers: true)
                   ↓
-              Output to LLM
+              CSV Format (includeCallNumbers: false)
+                  ↓
+              Output: Title,Author,Branch,Status,Notes
 ```
 
-The `find_books` tool follows this flow:
-1. Calls search API to get catalog results
-2. Calls availability API to get circulation status
-3. Aggregates ALL data into a unified "meta object" in memory
-4. **Deduplicates results** (merge multiple copies, consolidate branches)
-5. Transforms to CSV format: `Title,Author,Call#,Branch,Status,Notes`
-6. Returns compact CSV output (~60-70% fewer tokens than JSON, additional 40-60% reduction from deduplication for popular books)
+### Real-Time Mode (`find_on_shelf`)
+```
+User → LLM → find_on_shelf
+                  ↓
+              searchAndMerge() [book-finder.ts]
+                  ↓
+              Search API + Availability API
+                  ↓
+              Meta Object (in-memory aggregation)
+                  ↓
+              Branch Filter (single branch, available only)
+                  ↓
+              Deduplication (mergeCallNumbers: false)
+                  ↓
+              CSV Format (includeCallNumbers: true)
+                  ↓
+              Output: Title,Author,Call#,Branch,Status,Notes
+```
+
+### Shared Flow Pattern
+
+Both tools follow this flow:
+1. Call `searchAndMerge()` with appropriate parameters
+2. Search API returns catalog results
+3. Availability API returns circulation status
+4. Aggregate ALL data into unified "meta objects" in memory
+5. Apply branch and availability filters
+6. **Deduplicate results** with mode-specific behavior
+7. Transform to CSV format with mode-specific columns
+8. Return compact CSV output
+
+**Token optimization:**
+- Planning mode: ~70% fewer tokens than JSON (no call numbers)
+- Real-time mode: ~60% fewer tokens than JSON (includes call numbers)
+- Both modes: Additional 40-60% reduction from deduplication for popular books
 
 ### Meta Object Design Pattern
 
@@ -113,19 +156,24 @@ The `find_books` tool follows this flow:
 
 **Deduplication:**
 - Automatically consolidates duplicate holdings before CSV formatting
+- Mode-dependent behavior via `mergeCallNumbers` parameter:
+  - **Planning mode** (`mergeCallNumbers: true`): Merge across call numbers - user doesn't care about shelf section
+  - **Real-time mode** (`mergeCallNumbers: false`): Preserve call numbers - different sections = different rows for navigation
 - Same branch, multiple copies: Single row with quantity notes (e.g., "3 copies (1 available)")
-- Multiple branches: Single row with branch="Multiple" and details in Notes (e.g., "2 at Bowman (1 available), 1 at Handley")
+- Multiple branches (planning mode): Single row with branch="Multiple" and details in Notes (e.g., "2 at Bowman (1 available), 1 at Handley")
 - Status prioritization: "Available" if ANY copy is available, otherwise "Checked Out"
-- Preserves different editions (different call numbers remain separate)
 - Token savings: 40-60% reduction for popular books (e.g., Harry Potter: 106 rows → 43 rows)
 - Implementation in `src/lib/deduplicator.ts`
 
 **CSV Transformation:**
 - 60-70% token reduction vs JSON
-- Format: `Title,Author,Call#,Branch,Status,Notes`
-- Call numbers expanded with human-readable descriptions (see Call Number Expansion below)
+- Mode-dependent columns via `includeCallNumbers` parameter:
+  - **Planning mode**: `Title,Author,Branch,Status,Notes` (no Call# column, saves ~30-40% more tokens)
+  - **Real-time mode**: `Title,Author,Call#,Branch,Status,Notes` (includes Call# for shelf navigation)
+- Call numbers expanded with human-readable descriptions when included (see Call Number Expansion below)
 - Smart Notes column (empty for standard books, populated for edge cases, quantity info, and branch details)
 - Proper CSV escaping for special characters
+- Implementation in `src/lib/csv-formatter.ts`
 
 **Call Number Expansion:**
 - Collection codes expanded inline: `J DON` → `Juvenile Fiction J DON`
@@ -287,19 +335,22 @@ src/
 ├── http.ts                       # HTTP transport (Express + SSE)
 ├── lib/
 │   ├── api.ts                   # TLC LS2 PAC API client (searchCatalog, checkAvailability, getResourceDetails)
+│   ├── book-finder.ts           # Shared search orchestration (searchAndMerge, applyBranchFilter, applyAvailabilityFilter)
 │   ├── call-number-expander.ts  # Call number expansion logic (collection codes, Dewey Decimal)
-│   ├── deduplicator.ts          # Result deduplication logic (merge copies, consolidate branches)
-│   └── csv-formatter.ts         # CSV transformation functions (formatAsCSV, buildCallNumber, buildNotes)
+│   ├── deduplicator.ts          # Result deduplication logic (merge copies, consolidate branches, mode-dependent)
+│   └── csv-formatter.ts         # CSV transformation functions (formatAsCSV with mode options, buildCallNumber, buildNotes)
 └── tools/
-    └── find-books.ts            # find_books tool (consolidated search + availability + deduplication + CSV output)
+    ├── search-catalog.ts        # Planning mode tool (holds and availability checking)
+    └── find-on-shelf.ts         # Real-time mode tool (shelf navigation at branch)
 ```
 
 **Design Patterns:**
-- Meta object pattern: aggregate all API data before formatting
-- Tool handler is self-contained module
-- API client is shared library with pure functions for each endpoint
-- Transport selection at entry point (stdio vs HTTP)
-- Future: add format transformation layer between meta object and output
+- **Meta object pattern:** Aggregate all API data before formatting (separation of concerns)
+- **Shared core logic:** Both tools use `book-finder.ts` for DRY search orchestration
+- **Mode-specific behavior:** Tools pass different parameters to shared functions (mergeCallNumbers, includeCallNumbers)
+- **Pure functions:** Core logic in `lib/` is testable without mocking APIs
+- **Tool separation:** Planning vs real-time workflows as distinct tools for clarity
+- **Transport selection:** stdio vs HTTP at entry point
 
 ## Performance Considerations
 
@@ -339,6 +390,35 @@ src/
 - Zod schema validation with clear messages
 - Parameter type mismatches explained in plain language
 - Invalid enum values: show valid options
+
+## Testing
+
+**Framework:** Node.js built-in test runner (`node:test`)
+- Zero dependencies, fast startup
+- TypeScript support via tsx
+- Sufficient for our needs
+
+**Testing Strategy:**
+1. **Unit tests** - Pure functions in `lib/` tested with hand-crafted mock data
+2. **Integration tests** - Verify tools use shared logic correctly with different modes
+3. **Real sample data** - Committed to `test/samples/` for regression testing
+
+**Test Coverage:**
+- `test/book-finder.test.ts` - Core search orchestration functions (9 tests)
+- `test/deduplicator.test.ts` - Deduplication logic with mode-specific behavior (17 tests)
+- `test/csv-formatter.test.ts` - CSV formatting with mode-specific columns (24 tests)
+- `test/call-number-expander.test.ts` - Call number expansion (52 tests)
+- `test/csv-formatter-integration.test.ts` - Full CSV formatting with real sample data (3 tests)
+- `test/deduplicator-integration.test.ts` - Full deduplication with real sample data (3 tests)
+- `test/search-catalog-integration.test.ts` - Tool integration verification (3 tests)
+
+**Total:** 105 tests, all passing
+
+**Key Testing Principles:**
+- Test transformations, not API calls (no mocking needed for most tests)
+- Real sample data validates edge cases we wouldn't think to mock
+- Pure functions in `lib/` are easy to test in isolation
+- Integration tests verify mode-specific behavior differences
 
 ## Rejected Architectural Decisions
 

@@ -3,7 +3,8 @@
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerFindBooksTool } from "./tools/find-books.js";
+import { registerSearchCatalogTool } from "./tools/search-catalog.js";
+import { registerFindOnShelfTool } from "./tools/find-on-shelf.js";
 
 export function createServer(): McpServer {
   const server = new McpServer({
@@ -12,7 +13,8 @@ export function createServer(): McpServer {
   });
 
   // Register all tools
-  registerFindBooksTool(server);
+  registerSearchCatalogTool(server); // Planning mode: holds and availability checking
+  registerFindOnShelfTool(server);   // Real-time mode: shelf navigation at branch
 
   return server;
 }

@@ -42,24 +42,35 @@ Currently, this requires multiple manual steps: web search for recommendations �
 ## Current State
 
 **Implemented:**
-- ✅ Consolidated `find_books` MCP tool (search + availability in one call)
-- ✅ CSV output format with flexible Notes column (~60-70% token reduction vs JSON)
+- ✅ **Two specialized MCP tools:**
+  - `search_catalog` - Planning mode for holds and availability checking (omits call numbers)
+  - `find_on_shelf` - Real-time mode for shelf navigation at branch (includes call numbers)
+- ✅ Shared search orchestration (DRY code via `book-finder.ts`)
+- ✅ Mode-dependent deduplication (merge vs preserve call numbers)
+- ✅ Mode-dependent CSV formatting (with/without Call# column)
+- ✅ CSV output format with flexible Notes column (~60-70% token reduction vs JSON, up to 70% in planning mode)
 - ✅ Result deduplication (automatic consolidation of duplicate holdings, 40-60% additional token reduction for popular books)
 - ✅ Expanded call numbers with human-readable descriptions (J → Juvenile Fiction, 814.54 → Literature)
 - ✅ Both stdio and HTTP transports
 - ✅ TypeScript with Zod validation
-- ✅ Comprehensive test suite (84 passing tests with real API data)
+- ✅ Comprehensive test suite (105 passing tests with real API data)
 - ✅ Docker deployment configuration
 - ✅ Reverse-engineered API client for TLC LS2 PAC
 - ✅ Works with Claude Desktop and mobile Claude
-- ✅ Branch filtering (Bowman/Handley/Clarke County)
-- ✅ Availability filtering (available_only parameter)
+- ✅ Branch filtering (multiple branches for planning, single branch for real-time)
+- ✅ Availability filtering (optional for planning, always true for real-time)
 - ✅ Meta object architecture (aggregate all data, transform later)
+
+**Known Critical Bugs (MUST FIX ASAP):**
+- ⚠️ **Branch filters not sent to API** - `searchCatalog()` always sends empty `branchFilters: []` to the API, regardless of user-specified branch filters. This causes ALL searches to return results from ALL branches.
+- ⚠️ **Misleading result counts with branch filtering** - Because we fetch all branches then filter client-side, we only check the first 20 results (first page). If the requested branch's items appear later in results, we report the total system-wide count but return 0 results. Example: "Found 410 result(s) at Clarke County but none are currently available" - the 410 is system-wide, we only checked first 20 results, none were at Clarke County.
+- ⚠️ **Impact:** Makes branch filtering nearly useless for smaller branches (Clarke County, Bowman). Users think books exist at their branch when they're actually at different branches. This affects both `search_catalog` and `find_on_shelf` tools.
 
 **Current Limitations:**
 - No timeout handling
 - No authentication support (holds/history not possible yet)
 - Fixed 20 result limit (not configurable)
+- Tool names are catalog-specific (not media-agnostic yet, but prepared for future media filtering)
 
 ## Stop Criteria
 
@@ -90,6 +101,46 @@ Currently, this requires multiple manual steps: web search for recommendations �
 
 *These are brainstormed ideas for what we might work on next. They're not commitments or promises - they're possibilities we can evaluate as we go. The actual path forward will emerge through building and testing.*
 
+### Fix Branch Filtering (URGENT - Currently Broken)
+
+**What it does:** 
+- Add `branchFilters` parameter to `searchCatalog()` API function in `src/lib/api.ts`
+- Pass user-specified branch filters through to the API request body
+- Let the API do server-side filtering instead of client-side post-filtering
+
+**Why critical:** 
+- Current implementation breaks branch filtering entirely for smaller branches
+- Users see misleading messages like "Found 410 result(s) at Clarke County" when those 410 results are system-wide, not branch-specific
+- Only the first 20 results are checked, so if Clarke County items appear later, they're never seen
+- Makes both `search_catalog` and `find_on_shelf` tools unreliable
+- This is blocking the core use case: finding books at a specific branch
+
+**Root cause:**
+- Line 181 in `src/lib/api.ts` hardcodes `branchFilters: []` 
+- Function signature doesn't accept branch filters as parameter
+- Client-side filtering in `book-finder.ts` happens AFTER fetching first page of all results
+
+**Fix approach:**
+1. Add `branchFilters?: string[]` parameter to `searchCatalog()` function
+2. Map user-friendly branch names to API branch identifiers (discover correct format)
+3. Pass `branchFilters` to API request body
+4. Update `book-finder.ts` to pass branch filters to API call
+5. Keep client-side availability filtering (API may not support that)
+6. Test with Clarke County queries to verify fixes
+
+**Complexity:** Medium - requires:
+- Discovering correct API branch filter format/identifiers
+- Mapping "Bowman"/"Handley"/"Clarke County" to API values
+- Testing to ensure API respects branch filters
+- Verifying totalHits is now branch-specific
+
+**When we build this, check:**
+- What are the exact branch identifier values the API expects?
+- Does API return accurate totalHits when branch filtered?
+- Should we keep client-side filtering as fallback if API filtering fails?
+- Do both tools (`search_catalog` and `find_on_shelf`) work correctly?
+- Test edge case: branch filter + available_only filter together
+
 ### Title/Author Normalization for Deduplication
 
 **What it does:** Normalize title, author, library name, and status to lowercase internally before grouping for deduplication. Present any of the original capitalization variations to the user in output.
@@ -102,38 +153,6 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - Which original capitalization to preserve? (First found? Most common? Best formatted?)
 - Does this introduce any edge cases where legitimately different books get merged?
 - Should we normalize punctuation too? (e.g., "Harry Potter & the..." vs "Harry Potter and the...")
-
-### Real-Time vs Planning Mode Split
-
-**What it does:** Two separate tools (or modes) for different use cases:
-1. **`find_books_now`** (real-time): Requires library parameter, assumes `available_only=true`, returns call numbers. Deduplication does NOT merge across different call numbers (different shelf locations matter).
-2. **`find_books`** (planning): Optional library/available filters, omits call numbers, merges across call numbers (user doesn't care about shelf location, just "can I get this book?").
-
-**Why valuable:** 
-- Simplifies each tool's logic (single responsibility)
-- Clearer intent for LLM ("I'm at the library" vs "I'm planning from home")
-- Better unit testing (less branching, fewer edge cases per tool)
-- Call number deduplication behavior depends on use case:
-  - Real-time: KEEP different call numbers separate (adult vs juvenile section matters for navigation)
-  - Planning: MERGE different call numbers (don't care about section, just availability)
-
-**Complexity:** Medium-High - requires:
-- Splitting current `find_books` tool into two
-- Separate Zod schemas for each
-- Separate CSV formatting logic (with/without call numbers)
-- Documentation updates for LLM to understand when to use each
-- Migration path for existing users
-
-**When we build this, check:**
-- How does LLM decide which tool to use? Clear in tool descriptions?
-- Should we keep `find_books` as a "smart" wrapper that delegates to the right tool?
-- What happens if user is at library but forgets to use real-time tool?
-- Unit testing strategy - can we share test fixtures between tools?
-- Does omitting call numbers actually save meaningful tokens?
-
-**Current concern:** `find_books` is growing complex with multiple responsibilities. Deduplication logic has different behavior needs depending on context (real-time vs planning). May be time to split for better maintainability and testing.
-
-**Testing gap identified:** No integration tests for `find_books` tool itself using sample data from `fetch-sample-data`. Current tests cover individual components (deduplicator, CSV formatter, call number expander) but not the full end-to-end flow through the tool handler.
 
 ### Bulk Book Search
 
@@ -379,6 +398,59 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - Should we provide retry hints?
 
 ## Implemented Features
+
+### Tool Split: Planning vs Real-Time Mode (Feb 2026)
+
+**Implementation approach:**
+- Split into two distinct tools with clear workflow-specific names
+- Shared core logic in `src/lib/book-finder.ts` for DRY architecture
+- Mode-specific behavior via parameters to shared functions
+
+**Tools:**
+1. **`search_catalog`** - Planning mode: "Plan holds by checking availability across Handley Regional Library branches"
+   - Optional branch filter (array, can check multiple or all)
+   - Optional available_only filter
+   - Merges across call numbers (user doesn't care about shelf section)
+   - Omits Call# column from CSV output (~30-40% additional token savings)
+2. **`find_on_shelf`** - Real-time mode: "Locate items with call numbers at your current library branch"
+   - Required single branch parameter
+   - Always filters to available only
+   - Preserves different call numbers (different shelf locations = separate rows)
+   - Includes Call# column for shelf navigation
+
+**Architecture:**
+- Extracted shared search logic to `book-finder.ts`:
+  - `searchAndMerge()` - Orchestrates API calls and data merging
+  - `applyBranchFilter()` - Filters to specified branches
+  - `applyAvailabilityFilter()` - Filters to available items
+- Updated `deduplicator.ts` with `mergeCallNumbers` parameter:
+  - true (planning): Merge same book with different call numbers
+  - false (real-time): Keep different call numbers separate for navigation
+- Updated `csv-formatter.ts` with `includeCallNumbers` parameter:
+  - false (planning): Omit Call# column, save tokens
+  - true (real-time): Include Call# column for shelf navigation
+
+**Testing:**
+- 105 tests total (up from 84)
+- Unit tests for all new shared functions
+- Tests for mode-specific behavior (mergeCallNumbers, includeCallNumbers)
+- Integration tests verify both tools use shared logic correctly
+
+**Results:**
+- Clear tool separation improves LLM understanding of workflows
+- Shared core logic eliminates duplication (DRY principle)
+- Mode-specific deduplication handles different use cases correctly
+- Planning mode saves additional ~30-40% tokens by omitting call numbers
+- Pure functions in `book-finder.ts` are easy to test without API mocking
+- Both tools maintain same quality: fast, token-efficient, reliable
+
+**Key learnings:**
+- Tool naming is critical: "search_catalog" and "find_on_shelf" clearly convey different workflows
+- Tool descriptions must have zero overlap to maximize LLM understanding
+- Extracting shared logic first made implementation straightforward
+- Testing pure functions is much easier than testing full tool handlers
+- Mode-specific behavior via parameters (not conditionals) keeps code clean
+- Real sample data in tests caught edge cases we wouldn't have thought to mock
 
 ### Result Deduplication (Feb 2026)
 

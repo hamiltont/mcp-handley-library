@@ -93,23 +93,48 @@ export function escapeCsvField(field: string): string {
   return field;
 }
 
+export interface FormatOptions {
+  /**
+   * Whether to include Call# column in CSV output
+   * - true (real-time mode): Include call numbers for shelf navigation
+   * - false (planning mode): Omit call numbers to save tokens (~30-40% reduction)
+   */
+  includeCallNumbers?: boolean;
+}
+
 /**
  * Transform aggregated meta objects to CSV format
- * Format: Title,Author,Call#,Branch,Status,Notes
+ * 
+ * Planning mode format: Title,Author,Branch,Status,Notes
+ * Real-time mode format: Title,Author,Call#,Branch,Status,Notes
+ * 
+ * @param results - Resources to format
+ * @param options - Format options (includeCallNumbers defaults to true for backward compatibility)
  */
-export function formatAsCSV(results: MergedResource[]): string {
-  const lines: string[] = ["Title,Author,Call#,Branch,Status,Notes"];
+export function formatAsCSV(results: MergedResource[], options: FormatOptions = {}): string {
+  const { includeCallNumbers = true } = options;
+  
+  // Build header based on mode
+  const header = includeCallNumbers
+    ? "Title,Author,Call#,Branch,Status,Notes"
+    : "Title,Author,Branch,Status,Notes";
+  
+  const lines: string[] = [header];
 
   for (const resource of results) {
     for (const holding of resource.holdingsInformations) {
       const title = escapeCsvField(resource.shortTitle || "");
       const author = escapeCsvField(resource.shortAuthor || "");
-      const callNumber = escapeCsvField(buildCallNumber(holding));
       const branch = escapeCsvField(holding.branchName || "");
       const status = getStatus(holding.availability);
       const notes = escapeCsvField(buildNotes(resource, holding));
       
-      lines.push(`${title},${author},${callNumber},${branch},${status},${notes}`);
+      if (includeCallNumbers) {
+        const callNumber = escapeCsvField(buildCallNumber(holding));
+        lines.push(`${title},${author},${callNumber},${branch},${status},${notes}`);
+      } else {
+        lines.push(`${title},${author},${branch},${status},${notes}`);
+      }
     }
   }
 

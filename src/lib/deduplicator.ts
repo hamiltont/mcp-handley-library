@@ -40,9 +40,13 @@ function keyToString(key: HoldingKey): string {
 
 /**
  * Convert HoldingKey to string WITHOUT branch for cross-branch grouping
+ * @param includeCallNumber - If true, include call number in key (real-time mode)
  */
-function keyToStringWithoutBranch(key: HoldingKey): string {
-  return `${key.title}|||${key.author}|||${key.callNumber}`;
+function keyToStringWithoutBranch(key: HoldingKey, includeCallNumber: boolean = true): string {
+  if (includeCallNumber) {
+    return `${key.title}|||${key.author}|||${key.callNumber}`;
+  }
+  return `${key.title}|||${key.author}`;
 }
 
 /**
@@ -55,22 +59,40 @@ interface BranchCounts {
   holdings: MergedHolding[];
 }
 
+export interface DeduplicationOptions {
+  /**
+   * Whether to merge holdings with different call numbers
+   * - true (planning mode): Merge across call numbers - user doesn't care about section
+   * - false (real-time mode): Preserve different call numbers - different shelf locations matter
+   */
+  mergeCallNumbers?: boolean;
+}
+
 /**
  * Deduplicate results by merging duplicate holdings
  * 
  * Strategy:
- * 1. Group holdings by (title, author, callNumber, branch)
+ * 1. Group holdings by (title, author, [callNumber], branch)
  * 2. For same branch with multiple copies: merge into single holding with quantity notes
- * 3. For multiple branches: create "Multiple" branch entry with branch details in notes
+ * 3. For multiple branches (planning mode): create "Multiple" branch entry with branch details in notes
+ * 
+ * @param results - Resources to deduplicate
+ * @param options - Deduplication options (mergeCallNumbers defaults to true for backward compatibility)
  */
-export function deduplicateResults(results: MergedResource[]): MergedResource[] {
+export function deduplicateResults(
+  results: MergedResource[],
+  options: DeduplicationOptions = {}
+): MergedResource[] {
+  const { mergeCallNumbers = true } = options;
   // First pass: flatten all holdings and group by book (without branch)
   const bookGroups = new Map<string, Map<string, BranchCounts>>();
   
   for (const resource of results) {
     for (const holding of resource.holdingsInformations) {
       const key = getHoldingKey(resource, holding);
-      const bookKey = keyToStringWithoutBranch(key);
+      // In real-time mode (!mergeCallNumbers), include call number in grouping key
+      // In planning mode (mergeCallNumbers), exclude call number to merge across sections
+      const bookKey = keyToStringWithoutBranch(key, !mergeCallNumbers);
       const branchKey = key.branch;
       
       if (!bookGroups.has(bookKey)) {
@@ -104,7 +126,7 @@ export function deduplicateResults(results: MergedResource[]): MergedResource[] 
   for (const resource of results) {
     for (const holding of resource.holdingsInformations) {
       const key = getHoldingKey(resource, holding);
-      const bookKey = keyToStringWithoutBranch(key);
+      const bookKey = keyToStringWithoutBranch(key, !mergeCallNumbers);
       
       // Skip if we've already processed this book
       if (processedBooks.has(bookKey)) {

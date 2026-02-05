@@ -6,7 +6,7 @@ import assert from "node:assert";
 import { test } from "node:test";
 import type { Resource } from "../src/lib/api.js";
 import type { MergedHolding, MergedResource } from "../src/lib/csv-formatter.js";
-import { deduplicateResults } from "../src/lib/deduplicator.js";
+import { deduplicateResults, type DeduplicationOptions } from "../src/lib/deduplicator.js";
 
 // Helper to create a test resource
 function createResource(
@@ -238,7 +238,7 @@ test("deduplicateResults: multiple books with different duplication patterns", (
 
 // --- Test: Different books with same title/author (different call numbers) ---
 
-test("deduplicateResults: different editions have different call numbers", () => {
+test("deduplicateResults: different editions - planning mode merges, real-time mode separates", () => {
   const input = [
     {
       ...createResource("Harry Potter", "Rowling", [
@@ -252,10 +252,13 @@ test("deduplicateResults: different editions have different call numbers", () =>
     },
   ];
 
-  const result = deduplicateResults(input);
-
-  // Should NOT deduplicate - different call numbers mean different editions
-  assert.strictEqual(result.length, 2, "Different editions should remain separate");
+  // Planning mode (default): merges different call numbers
+  const planningResult = deduplicateResults(input);
+  assert.strictEqual(planningResult.length, 1, "Planning mode should merge different editions");
+  
+  // Real-time mode: preserves different call numbers (different shelf locations)
+  const realtimeResult = deduplicateResults(input, { mergeCallNumbers: false });
+  assert.strictEqual(realtimeResult.length, 2, "Real-time mode should preserve different editions");
 });
 
 // --- Test: Edge cases ---
@@ -277,4 +280,95 @@ test("deduplicateResults: resource with no holdings", () => {
 
   const result = deduplicateResults(input);
   assert.strictEqual(result.length, 0, "Resources with no holdings should be filtered out");
+});
+
+// --- Test: mergeCallNumbers parameter (planning vs real-time mode) ---
+
+test("deduplicateResults: mergeCallNumbers=true (planning mode) - merges different call numbers", () => {
+  // Same book in different sections (juvenile vs juvenile easy)
+  const input = [
+    createResource("Room on the Broom", "Donaldson", [
+      { callPrefix: "J", callClass: "DON", callCutter: "RO", branchName: "Bowman", available: true },
+      { callPrefix: "JE", callClass: "DON", callCutter: "RO", branchName: "Bowman", available: true },
+    ]),
+  ];
+
+  const result = deduplicateResults(input, { mergeCallNumbers: true });
+
+  assert.strictEqual(result.length, 1, "Should merge into 1 resource");
+  assert.strictEqual(result[0].holdingsInformations.length, 1, "Should have 1 consolidated holding");
+  
+  const holding = result[0].holdingsInformations[0] as any;
+  assert.strictEqual(holding._quantityNotes, "2 copies (2 available)");
+});
+
+test("deduplicateResults: mergeCallNumbers=false (real-time mode) - preserves different call numbers", () => {
+  // Same book in different sections - keep separate for shelf navigation
+  const input = [
+    createResource("Room on the Broom", "Donaldson", [
+      { callPrefix: "J", callClass: "DON", callCutter: "RO", branchName: "Bowman", available: true },
+      { callPrefix: "JE", callClass: "DON", callCutter: "RO", branchName: "Bowman", available: true },
+    ]),
+  ];
+
+  const result = deduplicateResults(input, { mergeCallNumbers: false });
+
+  assert.strictEqual(result.length, 2, "Should keep as 2 separate resources (different shelf locations)");
+  assert.strictEqual(result[0].holdingsInformations.length, 1);
+  assert.strictEqual(result[1].holdingsInformations.length, 1);
+});
+
+test("deduplicateResults: mergeCallNumbers=false - still merges same call number at same branch", () => {
+  // Multiple copies with SAME call number at SAME branch - should still merge
+  const input = [
+    createResource("Harry Potter", "Rowling", [
+      { callPrefix: "J", callClass: "ROW", callCutter: "HAR", branchName: "Bowman", available: true },
+      { callPrefix: "J", callClass: "ROW", callCutter: "HAR", branchName: "Bowman", available: false },
+      { callPrefix: "J", callClass: "ROW", callCutter: "HAR", branchName: "Bowman", available: false },
+    ]),
+  ];
+
+  const result = deduplicateResults(input, { mergeCallNumbers: false });
+
+  assert.strictEqual(result.length, 1, "Should merge same call numbers");
+  assert.strictEqual(result[0].holdingsInformations.length, 1);
+  
+  const holding = result[0].holdingsInformations[0] as any;
+  assert.strictEqual(holding._quantityNotes, "3 copies (1 available)");
+});
+
+test("deduplicateResults: mergeCallNumbers=false - different call numbers at different branches stay separate", () => {
+  // Same book, different sections, different branches
+  const input = [
+    createResource("The Gruffalo", "Donaldson", [
+      { callPrefix: "J", callClass: "DON", callCutter: "GR", branchName: "Bowman", available: true },
+      { callPrefix: "JE", callClass: "DON", callCutter: "GR", branchName: "Handley", available: true },
+    ]),
+  ];
+
+  const result = deduplicateResults(input, { mergeCallNumbers: false });
+
+  assert.strictEqual(result.length, 2, "Should keep separate (different call numbers AND different branches)");
+  assert.strictEqual(result[0].holdingsInformations[0].branchName, "Bowman");
+  assert.strictEqual(result[1].holdingsInformations[0].branchName, "Handley");
+});
+
+test("deduplicateResults: mergeCallNumbers=true - creates Multiple branch for different call numbers across branches", () => {
+  // Planning mode: merge across branches even with different call numbers
+  const input = [
+    createResource("The Gruffalo", "Donaldson", [
+      { callPrefix: "J", callClass: "DON", callCutter: "GR", branchName: "Bowman", available: true },
+      { callPrefix: "JE", callClass: "DON", callCutter: "GR", branchName: "Handley", available: true },
+    ]),
+  ];
+
+  const result = deduplicateResults(input, { mergeCallNumbers: true });
+
+  assert.strictEqual(result.length, 1, "Should merge into single resource");
+  assert.strictEqual(result[0].holdingsInformations.length, 1);
+  assert.strictEqual(result[0].holdingsInformations[0].branchName, "Multiple");
+  
+  const holding = result[0].holdingsInformations[0] as any;
+  assert.ok(holding._branchDetails.includes("Bowman"));
+  assert.ok(holding._branchDetails.includes("Handley"));
 });

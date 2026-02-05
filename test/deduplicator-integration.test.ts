@@ -3,8 +3,8 @@
  */
 
 import assert from "node:assert";
-import { test } from "node:test";
 import { readFileSync } from "node:fs";
+import { test } from "node:test";
 import type { AvailabilityResponse, SearchResponse } from "../src/lib/api.js";
 import { formatAsCSV, type MergedResource } from "../src/lib/csv-formatter.js";
 import { deduplicateResults } from "../src/lib/deduplicator.js";
