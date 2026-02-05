@@ -91,8 +91,12 @@ export function registerFindOnShelfTool(server: McpServer): void {
         // Real-time mode: preserve different call numbers (different shelf locations matter)
         const deduplicatedResults = deduplicateResults(resources, { mergeCallNumbers: false });
 
-        // Real-time mode: include call numbers for shelf navigation
-        const csvOutput = formatAsCSV(deduplicatedResults, { includeCallNumbers: true });
+        // Real-time mode: include call numbers, omit branch (redundant) and status (always available)
+        const csvOutput = formatAsCSV(deduplicatedResults, { 
+          includeCallNumbers: true,
+          includeBranch: false,
+          includeStatus: false,
+        });
 
         return {
           content: [

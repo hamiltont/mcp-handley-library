@@ -76,7 +76,7 @@ User → LLM → search_catalog
                   ↓
               Deduplication (mergeCallNumbers: true)
                   ↓
-              CSV Format (includeCallNumbers: false)
+              CSV Format (includeCallNumbers: false, includeBranch: true, includeStatus: true)
                   ↓
               Output: Title,Author,Branch,Status,Notes
 ```
@@ -95,9 +95,9 @@ User → LLM → find_on_shelf
                   ↓
               Deduplication (mergeCallNumbers: false)
                   ↓
-              CSV Format (includeCallNumbers: true)
+              CSV Format (includeCallNumbers: true, includeBranch: false, includeStatus: false)
                   ↓
-              Output: Title,Author,Call#,Branch,Status,Notes
+              Output: Title,Author,Call#,Notes
 ```
 
 ### Shared Flow Pattern
@@ -114,7 +114,7 @@ Both tools follow this flow:
 
 **Token optimization:**
 - Planning mode: ~70% fewer tokens than JSON (no call numbers)
-- Real-time mode: ~60% fewer tokens than JSON (includes call numbers)
+- Real-time mode: ~77% fewer tokens than JSON (includes call numbers, omits redundant branch/status = 17% additional savings)
 - Both modes: Additional 40-60% reduction from deduplication for popular books
 
 ### Meta Object Design Pattern
@@ -166,10 +166,14 @@ Both tools follow this flow:
 - Implementation in `src/lib/deduplicator.ts`
 
 **CSV Transformation:**
-- 60-70% token reduction vs JSON
-- Mode-dependent columns via `includeCallNumbers` parameter:
-  - **Planning mode**: `Title,Author,Branch,Status,Notes` (no Call# column, saves ~30-40% more tokens)
-  - **Real-time mode**: `Title,Author,Call#,Branch,Status,Notes` (includes Call# for shelf navigation)
+- 60-77% token reduction vs JSON (depending on mode)
+- Context-aware columns via format options:
+  - **Planning mode**: `Title,Author,Branch,Status,Notes` (omit Call#, keep Branch/Status for hold planning)
+  - **Real-time mode**: `Title,Author,Call#,Notes` (include Call#, omit redundant Branch/Status, saves additional ~17%)
+- Format options:
+  - `includeCallNumbers` - Include/omit call number column
+  - `includeBranch` - Include/omit branch column (redundant when user specified single branch)
+  - `includeStatus` - Include/omit status column (redundant when availableOnly=true)
 - Call numbers expanded with human-readable descriptions when included (see Call Number Expansion below)
 - Smart Notes column (empty for standard books, populated for edge cases, quantity info, and branch details)
 - Proper CSV escaping for special characters
@@ -409,13 +413,13 @@ src/
 - `test/book-finder.test.ts` - Core search orchestration functions (9 tests)
 - `test/branch-filtering.test.ts` - Branch filtering unit and integration tests (10 tests, includes online API tests)
 - `test/deduplicator.test.ts` - Deduplication logic with mode-specific behavior (17 tests)
-- `test/csv-formatter.test.ts` - CSV formatting with mode-specific columns (24 tests)
+- `test/csv-formatter.test.ts` - CSV formatting with context-aware columns (31 tests, includes includeCallNumbers/Branch/Status options)
 - `test/call-number-expander.test.ts` - Call number expansion (52 tests)
 - `test/csv-formatter-integration.test.ts` - Full CSV formatting with real sample data (3 tests)
 - `test/deduplicator-integration.test.ts` - Full deduplication with real sample data (3 tests)
 - `test/search-catalog-integration.test.ts` - Tool integration verification (3 tests)
 
-**Total:** 115 tests, all passing
+**Total:** 122 tests, all passing
 
 **Key Testing Principles:**
 - Test transformations, not API calls (no mocking needed for most tests)

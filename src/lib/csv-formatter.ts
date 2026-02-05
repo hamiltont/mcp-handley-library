@@ -100,24 +100,43 @@ export interface FormatOptions {
    * - false (planning mode): Omit call numbers to save tokens (~30-40% reduction)
    */
   includeCallNumbers?: boolean;
+  /**
+   * Whether to include Branch column in CSV output
+   * - true (planning mode): Include branch to know which location has the book
+   * - false (real-time mode): Omit branch since user already specified it (redundant)
+   */
+  includeBranch?: boolean;
+  /**
+   * Whether to include Status column in CSV output
+   * - true (planning mode): Include status to distinguish available vs needs hold
+   * - false (real-time mode): Omit status when it's always constant (availableOnly=true)
+   */
+  includeStatus?: boolean;
 }
 
 /**
  * Transform aggregated meta objects to CSV format
  * 
  * Planning mode format: Title,Author,Branch,Status,Notes
- * Real-time mode format: Title,Author,Call#,Branch,Status,Notes
+ * Real-time mode format: Title,Author,Call#,Notes
  * 
  * @param results - Resources to format
- * @param options - Format options (includeCallNumbers defaults to true for backward compatibility)
+ * @param options - Format options (all default to true for backward compatibility)
  */
 export function formatAsCSV(results: MergedResource[], options: FormatOptions = {}): string {
-  const { includeCallNumbers = true } = options;
+  const { 
+    includeCallNumbers = true,
+    includeBranch = true,
+    includeStatus = true,
+  } = options;
   
-  // Build header based on mode
-  const header = includeCallNumbers
-    ? "Title,Author,Call#,Branch,Status,Notes"
-    : "Title,Author,Branch,Status,Notes";
+  // Build header based on options
+  const headerFields: string[] = ["Title", "Author"];
+  if (includeCallNumbers) headerFields.push("Call#");
+  if (includeBranch) headerFields.push("Branch");
+  if (includeStatus) headerFields.push("Status");
+  headerFields.push("Notes");
+  const header = headerFields.join(",");
   
   const lines: string[] = [header];
 
@@ -125,16 +144,19 @@ export function formatAsCSV(results: MergedResource[], options: FormatOptions = 
     for (const holding of resource.holdingsInformations) {
       const title = escapeCsvField(resource.shortTitle || "");
       const author = escapeCsvField(resource.shortAuthor || "");
+      const callNumber = escapeCsvField(buildCallNumber(holding));
       const branch = escapeCsvField(holding.branchName || "");
       const status = getStatus(holding.availability);
       const notes = escapeCsvField(buildNotes(resource, holding));
       
-      if (includeCallNumbers) {
-        const callNumber = escapeCsvField(buildCallNumber(holding));
-        lines.push(`${title},${author},${callNumber},${branch},${status},${notes}`);
-      } else {
-        lines.push(`${title},${author},${branch},${status},${notes}`);
-      }
+      // Build row based on options
+      const rowFields: string[] = [title, author];
+      if (includeCallNumbers) rowFields.push(callNumber);
+      if (includeBranch) rowFields.push(branch);
+      if (includeStatus) rowFields.push(status);
+      rowFields.push(notes);
+      
+      lines.push(rowFields.join(","));
     }
   }
 

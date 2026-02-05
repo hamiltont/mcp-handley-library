@@ -47,13 +47,15 @@ Currently, this requires multiple manual steps: web search for recommendations �
   - `find_on_shelf` - Real-time mode for shelf navigation at branch (includes call numbers)
 - ✅ Shared search orchestration (DRY code via `book-finder.ts`)
 - ✅ Mode-dependent deduplication (merge vs preserve call numbers)
-- ✅ Mode-dependent CSV formatting (with/without Call# column)
+- ✅ **Context-aware field filtering** - Different CSV columns for planning vs real-time mode
+  - Planning: `Title,Author,Branch,Status,Notes` (need branch to know location)
+  - Real-time: `Title,Author,Call#,Notes` (omit redundant branch/status, ~17% token savings)
 - ✅ CSV output format with flexible Notes column (~60-70% token reduction vs JSON, up to 70% in planning mode)
 - ✅ Result deduplication (automatic consolidation of duplicate holdings, 40-60% additional token reduction for popular books)
 - ✅ Expanded call numbers with human-readable descriptions (J → Juvenile Fiction, 814.54 → Literature)
 - ✅ Both stdio and HTTP transports
 - ✅ TypeScript with Zod validation
-- ✅ Comprehensive test suite (115 passing tests with real API data)
+- ✅ Comprehensive test suite (122 passing tests with real API data)
 - ✅ Docker deployment configuration
 - ✅ Reverse-engineered API client for TLC LS2 PAC
 - ✅ Works with Claude Desktop and mobile Claude
@@ -252,31 +254,6 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - Should we distinguish between search and availability timeouts?
 - Error message clarity for users
 
-### Context-Aware Field Filtering
-
-**What it does:**
-- Distinguish between "real-time" searches (at library now) vs "planning" searches (browsing from home)
-- For non-real-time searches: omit branch and call number from results (saves ~30-40% tokens)
-- Always include status (available vs checked out) regardless of search type
-- For real-time searches: include full details (branch, call number) for immediate shelf navigation
-
-**Why valuable:** 
-- Standing in library: need call numbers to find books on shelves, need branch to know which building
-- Browsing from home: don't care about call numbers or which branch, just whether it's available or needs a hold
-- Status is always relevant: tells you if you can get it now or need to wait
-- Significant token savings for common "find me books to hold" use case
-
-**Complexity:** Medium - requires:
-- Detecting search context (real-time vs planning) via tool parameter or LLM hint
-- Conditional field inclusion in output formatting
-- Clear documentation for LLM to understand when to use each mode
-
-**When we build this, check:**
-- How does LLM determine which mode to use? Explicit parameter or infer from context?
-- Should "planning" mode be the default (more common use case)?
-- Does omitting these fields actually save meaningful tokens in practice?
-- What about hybrid cases ("show me books at Bowman" from home before visiting)?
-
 ### Semantic Search "Find Tool" (Experimental)
 
 **What it does:**
@@ -436,6 +413,40 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - Testing pure functions is much easier than testing full tool handlers
 - Mode-specific behavior via parameters (not conditionals) keeps code clean
 - Real sample data in tests caught edge cases we wouldn't have thought to mock
+
+### Context-Aware Field Filtering (Feb 2026)
+
+**Problem:** The original tool split omitted call numbers in planning mode, but still included Branch and Status columns in real-time mode. This was inefficient because:
+- In real-time mode, the branch is a required parameter, so showing it in every row is redundant
+- In real-time mode, `availableOnly: true` is hardcoded, so Status is always "Available" (redundant)
+- Initial misunderstanding: Assumed planning mode should omit branch (wrong - users need to know which location has the book)
+
+**Implementation approach:**
+- Added `includeBranch` and `includeStatus` options to `FormatOptions` interface
+- Updated `formatAsCSV()` to conditionally include/omit columns based on options
+- Planning mode: `Title,Author,Branch,Status,Notes` (keep branch to know location, keep status for hold planning)
+- Real-time mode: `Title,Author,Call#,Notes` (omit redundant branch/status, keep call numbers for navigation)
+- All options default to `true` for backward compatibility
+
+**Testing:**
+- Added 7 new tests for `includeBranch` and `includeStatus` options
+- E2E tests verified actual outputs match expected formats
+- Token savings tests confirmed ~17% reduction in real-time mode
+
+**Results:**
+- **Token savings:** 17.2% reduction for real-time mode (e.g., 38 tokens saved for Pete the Cat search)
+- **Planning mode unchanged:** Still shows Branch and Status (critical information for hold planning)
+- **Real-time mode optimized:** Removes redundant information that user already specified or that's constant
+- **Flexible architecture:** Dynamic CSV column construction makes adding future column options trivial
+
+**Key learnings:**
+- **User workflow understanding is critical:** Initial design assumed wrong workflow priorities. Direct user feedback revealed:
+  - Planning mode: Need branch (to know location) but not call numbers (not navigating shelves)
+  - Real-time mode: Need call numbers (navigating shelves) but not branch (already specified) or status (always available)
+- **Question assumptions:** The feature description in the vision document was incorrect. User's actual workflow knowledge trumps written specs.
+- **Redundancy = token waste:** When a field is user-specified (branch parameter) or always constant (status=available), omit it from output.
+- **Options design:** Boolean flags for each column (`includeCallNumbers`, `includeBranch`, `includeStatus`) provides maximum flexibility with clear intent.
+- **E2E testing reveals reality:** Unit tests passed, but E2E verification with real queries showed the actual token savings (17%) and confirmed workflow assumptions.
 
 ### Result Deduplication (Feb 2026)
 

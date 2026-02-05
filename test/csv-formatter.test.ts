@@ -506,3 +506,266 @@ test("formatAsCSV: includeCallNumbers=false - works with multiple resources", ()
   assert.strictEqual(lines[1], "Book 1,Author 1,Bowman,Available,");
   assert.strictEqual(lines[2], "Book 2,Author 2,Handley,Checked Out,");
 });
+
+// --- Test: includeBranch option (planning vs real-time mode) ---
+
+test("formatAsCSV: includeBranch=true (default) - includes Branch column", () => {
+  const results: MergedResource[] = [
+    {
+      id: 1,
+      shortTitle: "Test Book",
+      shortAuthor: "Test Author",
+      format: "Book",
+      holdingsInformations: [
+        {
+          barcode: "123",
+          branchName: "Bowman",
+          collectionName: "Fiction",
+          callPrefix: "J",
+          callClass: "DON",
+          callCutter: "TEST",
+          availability: {
+            itemIdentifier: "123",
+            available: true,
+            status: "Available",
+            statusCode: "I",
+          },
+        } as MergedHolding,
+      ],
+    } as MergedResource,
+  ];
+
+  const csv = formatAsCSV(results);
+  const lines = csv.split("\n");
+
+  assert.strictEqual(lines[0], "Title,Author,Call#,Branch,Status,Notes");
+  assert.ok(lines[1].includes("Bowman"));
+});
+
+test("formatAsCSV: includeBranch=false (real-time mode) - omits Branch column", () => {
+  const results: MergedResource[] = [
+    {
+      id: 1,
+      shortTitle: "Test Book",
+      shortAuthor: "Test Author",
+      format: "Book",
+      holdingsInformations: [
+        {
+          barcode: "123",
+          branchName: "Bowman",
+          collectionName: "Fiction",
+          callPrefix: "J",
+          callClass: "DON",
+          callCutter: "TEST",
+          availability: {
+            itemIdentifier: "123",
+            available: true,
+            status: "Available",
+            statusCode: "I",
+          },
+        } as MergedHolding,
+      ],
+    } as MergedResource,
+  ];
+
+  const csv = formatAsCSV(results, { includeBranch: false });
+  const lines = csv.split("\n");
+
+  assert.strictEqual(lines[0], "Title,Author,Call#,Status,Notes");
+  assert.ok(!lines[1].includes("Bowman"));
+});
+
+// --- Test: includeStatus option (planning vs real-time mode) ---
+
+test("formatAsCSV: includeStatus=true (default) - includes Status column", () => {
+  const results: MergedResource[] = [
+    {
+      id: 1,
+      shortTitle: "Test Book",
+      shortAuthor: "Test Author",
+      format: "Book",
+      holdingsInformations: [
+        {
+          barcode: "123",
+          branchName: "Bowman",
+          collectionName: "Fiction",
+          callPrefix: "J",
+          callClass: "DON",
+          callCutter: "TEST",
+          availability: {
+            itemIdentifier: "123",
+            available: true,
+            status: "Available",
+            statusCode: "I",
+          },
+        } as MergedHolding,
+      ],
+    } as MergedResource,
+  ];
+
+  const csv = formatAsCSV(results);
+  const lines = csv.split("\n");
+
+  assert.strictEqual(lines[0], "Title,Author,Call#,Branch,Status,Notes");
+  assert.ok(lines[1].includes("Available"));
+});
+
+test("formatAsCSV: includeStatus=false (real-time mode) - omits Status column", () => {
+  const results: MergedResource[] = [
+    {
+      id: 1,
+      shortTitle: "Test Book",
+      shortAuthor: "Test Author",
+      format: "Book",
+      holdingsInformations: [
+        {
+          barcode: "123",
+          branchName: "Bowman",
+          collectionName: "Fiction",
+          callPrefix: "J",
+          callClass: "DON",
+          callCutter: "TEST",
+          availability: {
+            itemIdentifier: "123",
+            available: true,
+            status: "Available",
+            statusCode: "I",
+          },
+        } as MergedHolding,
+      ],
+    } as MergedResource,
+  ];
+
+  const csv = formatAsCSV(results, { includeStatus: false });
+  const lines = csv.split("\n");
+
+  assert.strictEqual(lines[0], "Title,Author,Call#,Branch,Notes");
+  assert.ok(!lines[1].includes("Available"));
+});
+
+// --- Test: Combined options (real-time mode full example) ---
+
+test("formatAsCSV: real-time mode (includeCallNumbers=true, includeBranch=false, includeStatus=false)", () => {
+  const results: MergedResource[] = [
+    {
+      id: 1,
+      shortTitle: "Room on the Broom",
+      shortAuthor: "Julia Donaldson",
+      format: "Book",
+      holdingsInformations: [
+        {
+          barcode: "123",
+          branchName: "Bowman",
+          collectionName: "Fiction",
+          callPrefix: "J",
+          callClass: "DON",
+          callCutter: "ROOM",
+          availability: {
+            itemIdentifier: "123",
+            available: true,
+            status: "Available",
+            statusCode: "I",
+          },
+        } as MergedHolding,
+      ],
+    } as MergedResource,
+  ];
+
+  const csv = formatAsCSV(results, { 
+    includeCallNumbers: true, 
+    includeBranch: false, 
+    includeStatus: false 
+  });
+  const lines = csv.split("\n");
+
+  assert.strictEqual(lines[0], "Title,Author,Call#,Notes");
+  assert.strictEqual(lines[1], "Room on the Broom,Julia Donaldson,Juvenile Fiction J DON ROOM,");
+  assert.ok(!lines[1].includes("Bowman"));
+  assert.ok(!lines[1].includes("Available"));
+});
+
+// --- Test: Combined options (planning mode full example) ---
+
+test("formatAsCSV: planning mode (includeCallNumbers=false, includeBranch=true, includeStatus=true)", () => {
+  const results: MergedResource[] = [
+    {
+      id: 1,
+      shortTitle: "Room on the Broom",
+      shortAuthor: "Julia Donaldson",
+      format: "Book",
+      holdingsInformations: [
+        {
+          barcode: "123",
+          branchName: "Bowman",
+          collectionName: "Fiction",
+          callPrefix: "J",
+          callClass: "DON",
+          callCutter: "ROOM",
+          availability: {
+            itemIdentifier: "123",
+            available: true,
+            status: "Available",
+            statusCode: "I",
+          },
+        } as MergedHolding,
+      ],
+    } as MergedResource,
+  ];
+
+  const csv = formatAsCSV(results, { 
+    includeCallNumbers: false, 
+    includeBranch: true, 
+    includeStatus: true 
+  });
+  const lines = csv.split("\n");
+
+  assert.strictEqual(lines[0], "Title,Author,Branch,Status,Notes");
+  assert.strictEqual(lines[1], "Room on the Broom,Julia Donaldson,Bowman,Available,");
+  assert.ok(!lines[1].includes("DON ROOM"));
+});
+
+// --- Test: Token savings with all optimizations ---
+
+test("formatAsCSV: real-time mode saves significant tokens by omitting branch and status", () => {
+  const results: MergedResource[] = [
+    {
+      id: 1,
+      shortTitle: "The Gruffalo",
+      shortAuthor: "Julia Donaldson",
+      format: "Book",
+      holdingsInformations: [
+        {
+          barcode: "123",
+          branchName: "Bowman",
+          collectionName: "Fiction",
+          callPrefix: "J",
+          callClass: "DON",
+          callCutter: "GRU",
+          availability: {
+            itemIdentifier: "123",
+            available: true,
+            status: "Available",
+            statusCode: "I",
+          },
+        } as MergedHolding,
+      ],
+    } as MergedResource,
+  ];
+
+  const csvDefault = formatAsCSV(results); // All columns
+  const csvRealTime = formatAsCSV(results, { 
+    includeCallNumbers: true,
+    includeBranch: false,
+    includeStatus: false,
+  });
+
+  // Real-time mode should be significantly shorter
+  assert.ok(csvRealTime.length < csvDefault.length);
+  
+  // Calculate savings
+  const charSavings = csvDefault.length - csvRealTime.length;
+  const estimatedTokenSavings = charSavings / 4;
+  
+  // Should save at least several tokens per row (Branch name + Status word)
+  assert.ok(estimatedTokenSavings > 4, `Expected significant token savings, got ${estimatedTokenSavings}`);
+});

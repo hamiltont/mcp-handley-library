@@ -96,8 +96,12 @@ export function registerSearchCatalogTool(server: McpServer): void {
         // Planning mode: merge across call numbers (user doesn't care about section)
         const deduplicatedResults = deduplicateResults(resources, { mergeCallNumbers: true });
 
-        // Planning mode: omit call numbers to save tokens
-        const csvOutput = formatAsCSV(deduplicatedResults, { includeCallNumbers: false });
+        // Planning mode: omit call numbers, keep branch and status
+        const csvOutput = formatAsCSV(deduplicatedResults, { 
+          includeCallNumbers: false,
+          includeBranch: true,
+          includeStatus: true,
+        });
 
         return {
           content: [
