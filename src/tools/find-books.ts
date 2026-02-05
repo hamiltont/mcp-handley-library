@@ -6,6 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { checkAvailability, searchCatalog, type SearchField } from "../lib/api.js";
 import { formatAsCSV, type MergedResource } from "../lib/csv-formatter.js";
+import { deduplicateResults } from "../lib/deduplicator.js";
 
 const SearchFieldSchema = z
   .enum([
@@ -167,8 +168,11 @@ export function registerFindBooksTool(server: McpServer): void {
           };
         }
 
-        // Transform aggregated meta object to CSV format
-        const csvOutput = formatAsCSV(results);
+        // Step 6: Deduplicate results (merge multiple copies, consolidate branches)
+        const deduplicatedResults = deduplicateResults(results);
+
+        // Step 7: Transform aggregated meta object to CSV format
+        const csvOutput = formatAsCSV(deduplicatedResults);
 
         return {
           content: [

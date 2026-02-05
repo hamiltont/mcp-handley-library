@@ -36,6 +36,18 @@ export function buildCallNumber(holding: HoldingsInfo): string {
 export function buildNotes(resource: Resource, holding: MergedHolding): string {
   const notes: string[] = [];
   
+  // Add branch details if this is a multi-branch deduplicated entry
+  const branchDetails = (holding as any)._branchDetails;
+  if (branchDetails) {
+    notes.push(branchDetails);
+  }
+  
+  // Add quantity notes if this is a deduplicated entry with multiple copies
+  const quantityNotes = (holding as any)._quantityNotes;
+  if (quantityNotes) {
+    notes.push(quantityNotes);
+  }
+  
   // Add media type if not a standard book
   const format = resource.format?.toLowerCase() || "";
   if (format.includes("audiobook") || format.includes("audio book")) {
@@ -48,8 +60,8 @@ export function buildNotes(resource: Resource, holding: MergedHolding): string {
     notes.push("CD");
   }
   
-  // Add due date if checked out
-  if (holding.availability?.available === false && holding.availability?.dueDate) {
+  // Add due date if checked out (skip if we have quantity notes, as it's confusing)
+  if (!quantityNotes && !branchDetails && holding.availability?.available === false && holding.availability?.dueDate) {
     notes.push(`Due: ${holding.availability.dueDate}`);
   }
   

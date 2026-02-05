@@ -75,9 +75,36 @@ async function main() {
   );
   console.log(`   Found ${search7.totalHits} results`);
 
-  // Test 8: Get availability for first search
+  // Test 8: Search for popular books with many duplicates
+  console.log("8. Searching for 'Harry Potter' (popular, many copies)...");
+  const search8 = await searchCatalog("Harry Potter", "Title", 50, 0, "Relevancy");
+  writeFileSync(
+    "test/samples/search-harry-potter.json",
+    JSON.stringify(search8, null, 2)
+  );
+  console.log(`   Found ${search8.totalHits} results, saved first 50`);
+
+  // Test 9: Search for Dog Man (extremely popular kids series)
+  console.log("9. Searching for 'Dog Man' (popular, many copies)...");
+  const search9 = await searchCatalog("Dog Man", "Title", 50, 0, "Relevancy");
+  writeFileSync(
+    "test/samples/search-dog-man.json",
+    JSON.stringify(search9, null, 2)
+  );
+  console.log(`   Found ${search9.totalHits} results, saved first 50`);
+
+  // Test 10: Search for Pete the Cat (popular picture book series)
+  console.log("10. Searching for 'Pete the Cat' (popular, many copies)...");
+  const search10 = await searchCatalog("Pete the Cat", "Title", 50, 0, "Relevancy");
+  writeFileSync(
+    "test/samples/search-pete-the-cat.json",
+    JSON.stringify(search10, null, 2)
+  );
+  console.log(`   Found ${search10.totalHits} results, saved first 50`);
+
+  // Test 11: Get availability for first search
   if (search1.resources.length > 0) {
-    console.log("8. Checking availability for Julia Donaldson books...");
+    console.log("11. Checking availability for Julia Donaldson books...");
     const availabilityItems = search1.resources.flatMap((resource) =>
       resource.holdingsInformations.map((holding) => ({
         itemIdentifier: holding.barcode,
@@ -88,6 +115,24 @@ async function main() {
     const availability = await checkAvailability(availabilityItems);
     writeFileSync(
       "test/samples/availability-julia-donaldson.json",
+      JSON.stringify(availability, null, 2)
+    );
+    console.log(`   Checked ${availability.itemAvailabilities.length} items`);
+  }
+
+  // Test 12: Get availability for popular book with duplicates
+  if (search8.resources.length > 0) {
+    console.log("12. Checking availability for Harry Potter books...");
+    const availabilityItems = search8.resources.flatMap((resource) =>
+      resource.holdingsInformations.map((holding) => ({
+        itemIdentifier: holding.barcode,
+        resourceId: resource.id,
+      }))
+    );
+    
+    const availability = await checkAvailability(availabilityItems);
+    writeFileSync(
+      "test/samples/availability-harry-potter.json",
       JSON.stringify(availability, null, 2)
     );
     console.log(`   Checked ${availability.itemAvailabilities.length} items`);
