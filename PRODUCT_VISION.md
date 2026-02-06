@@ -52,10 +52,11 @@ Currently, this requires multiple manual steps: web search for recommendations �
   - Real-time: `Title,Author,Call#,Notes` (omit redundant branch/status, ~17% token savings)
 - ✅ CSV output format with flexible Notes column (~60-70% token reduction vs JSON, up to 70% in planning mode)
 - ✅ Result deduplication (automatic consolidation of duplicate holdings, 40-60% additional token reduction for popular books)
+- ✅ **Case-insensitive deduplication** - Normalizes title, author, branch, and call number capitalization for proper merging
 - ✅ Expanded call numbers with human-readable descriptions (J → Juvenile Fiction, 814.54 → Literature)
 - ✅ Both stdio and HTTP transports
 - ✅ TypeScript with Zod validation
-- ✅ Comprehensive test suite (122 passing tests with real API data)
+- ✅ Comprehensive test suite (128 passing tests with real API data)
 - ✅ Docker deployment configuration
 - ✅ Reverse-engineered API client for TLC LS2 PAC
 - ✅ Works with Claude Desktop and mobile Claude
@@ -100,20 +101,6 @@ Currently, this requires multiple manual steps: web search for recommendations �
 ## Brainstormed Next Features
 
 *These are brainstormed ideas for what we might work on next. They're not commitments or promises - they're possibilities we can evaluate as we go. The actual path forward will emerge through building and testing.*
-
-
-### Title/Author Normalization for Deduplication
-
-**What it does:** Normalize title, author, library name, and status to lowercase internally before grouping for deduplication. Present any of the original capitalization variations to the user in output.
-
-**Why valuable:** Library API returns inconsistent capitalization (e.g., "Harry Potter and the chamber of secrets" vs "Harry Potter and the Chamber of Secrets"). Current deduplication treats these as different books. Normalization would merge them correctly while preserving original formatting for display.
-
-**Complexity:** Simple - lowercase string comparison in deduplicator, but needs careful testing
-
-**When we build this, check:**
-- Which original capitalization to preserve? (First found? Most common? Best formatted?)
-- Does this introduce any edge cases where legitimately different books get merged?
-- Should we normalize punctuation too? (e.g., "Harry Potter & the..." vs "Harry Potter and the...")
 
 ### Bulk Book Search
 

@@ -372,3 +372,133 @@ test("deduplicateResults: mergeCallNumbers=true - creates Multiple branch for di
   assert.ok(holding._branchDetails.includes("Bowman"));
   assert.ok(holding._branchDetails.includes("Handley"));
 });
+
+// --- Test: Case-insensitive deduplication ---
+
+test("deduplicateResults: case-insensitive title - same book with different capitalization", () => {
+  const input = [
+    createResource("Harry Potter and the Chamber of Secrets", "Rowling, J.K.", [
+      { branchName: "Bowman", available: true },
+    ]),
+    createResource("Harry Potter and the chamber of secrets", "Rowling, J.K.", [
+      { branchName: "Bowman", available: false },
+    ]),
+  ];
+
+  const result = deduplicateResults(input);
+
+  assert.strictEqual(result.length, 1, "Should merge books with different title capitalization");
+  assert.strictEqual(result[0].holdingsInformations.length, 1);
+
+  const holding = result[0].holdingsInformations[0] as any;
+  assert.strictEqual(holding._quantityNotes, "2 copies (1 available)");
+
+  // Should preserve first-encountered capitalization
+  assert.strictEqual(result[0].shortTitle, "Harry Potter and the Chamber of Secrets");
+});
+
+test("deduplicateResults: case-insensitive author - same author with different capitalization", () => {
+  const input = [
+    createResource("The Gruffalo", "Donaldson, Julia.", [
+      { branchName: "Bowman", available: true },
+    ]),
+    createResource("The Gruffalo", "Donaldson, JULIA.", [
+      { branchName: "Bowman", available: false },
+    ]),
+  ];
+
+  const result = deduplicateResults(input);
+
+  assert.strictEqual(result.length, 1, "Should merge books with different author capitalization");
+  assert.strictEqual(result[0].holdingsInformations.length, 1);
+
+  const holding = result[0].holdingsInformations[0] as any;
+  assert.strictEqual(holding._quantityNotes, "2 copies (1 available)");
+
+  // Should preserve first-encountered author
+  assert.strictEqual(result[0].shortAuthor, "Donaldson, Julia.");
+});
+
+test("deduplicateResults: case-insensitive branch - same branch with different capitalization", () => {
+  const input = [
+    createResource("Test Book", "Test Author", [
+      { branchName: "Bowman", available: true },
+      { branchName: "bowman", available: false },
+    ]),
+  ];
+
+  const result = deduplicateResults(input);
+
+  assert.strictEqual(result.length, 1);
+  assert.strictEqual(result[0].holdingsInformations.length, 1);
+
+  const holding = result[0].holdingsInformations[0] as any;
+  assert.strictEqual(holding._quantityNotes, "2 copies (1 available)");
+  assert.strictEqual(holding.branchName, "Bowman", "Should preserve first-encountered branch capitalization");
+});
+
+test("deduplicateResults: case-insensitive call number - same call number with different capitalization", () => {
+  const input = [
+    createResource("Room on the Broom", "Donaldson", [
+      { callPrefix: "J", callClass: "DON", callCutter: "ROM", branchName: "Bowman", available: true },
+      { callPrefix: "j", callClass: "don", callCutter: "rom", branchName: "Bowman", available: false },
+    ]),
+  ];
+
+  const result = deduplicateResults(input);
+
+  assert.strictEqual(result.length, 1);
+  assert.strictEqual(result[0].holdingsInformations.length, 1);
+
+  const holding = result[0].holdingsInformations[0] as any;
+  assert.strictEqual(holding._quantityNotes, "2 copies (1 available)");
+});
+
+test("deduplicateResults: case-insensitive - multiple branches with different capitalization", () => {
+  const input = [
+    createResource("The Gruffalo", "Donaldson", [
+      { branchName: "Bowman", available: true },
+      { branchName: "bowman", available: false },
+      { branchName: "Handley", available: true },
+    ]),
+  ];
+
+  const result = deduplicateResults(input);
+
+  assert.strictEqual(result.length, 1, "Should recognize Bowman/bowman as same branch");
+  assert.strictEqual(result[0].holdingsInformations.length, 1);
+
+  const holding = result[0].holdingsInformations[0] as any;
+  assert.strictEqual(holding.branchName, "Multiple");
+
+  // Should show 2 branches (Bowman with 2 copies, Handley with 1)
+  assert.match(holding._branchDetails, /2 at Bowman \(1 available\)/);
+  assert.match(holding._branchDetails, /1 at Handley \(1 available\)/);
+});
+
+test("deduplicateResults: case-insensitive - complex real-world scenario", () => {
+  // Simulate API inconsistency: same book with various capitalization differences
+  const input = [
+    createResource("Harry Potter and the Chamber of Secrets", "Rowling, J.K.", [
+      { callPrefix: "J", callClass: "ROW", callCutter: "HAR", branchName: "Bowman", available: true },
+    ]),
+    createResource("Harry Potter and the chamber of secrets", "Rowling, j.k.", [
+      { callPrefix: "J", callClass: "row", callCutter: "har", branchName: "bowman", available: false },
+    ]),
+    createResource("Harry Potter and the Chamber Of Secrets", "Rowling, J.K.", [
+      { callPrefix: "j", callClass: "ROW", callCutter: "HAR", branchName: "Handley", available: true },
+    ]),
+  ];
+
+  const result = deduplicateResults(input);
+
+  assert.strictEqual(result.length, 1, "Should merge all variations into single book");
+  assert.strictEqual(result[0].holdingsInformations.length, 1);
+
+  const holding = result[0].holdingsInformations[0] as any;
+  assert.strictEqual(holding.branchName, "Multiple");
+
+  // Verify original capitalization preserved from first encounter
+  assert.strictEqual(result[0].shortTitle, "Harry Potter and the Chamber of Secrets");
+  assert.strictEqual(result[0].shortAuthor, "Rowling, J.K.");
+});

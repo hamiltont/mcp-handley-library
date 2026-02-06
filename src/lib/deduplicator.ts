@@ -33,20 +33,22 @@ function getHoldingKey(resource: MergedResource, holding: MergedHolding): Holdin
 
 /**
  * Convert HoldingKey to string for Map usage
+ * Normalizes to lowercase for case-insensitive comparison
  */
 function keyToString(key: HoldingKey): string {
-  return `${key.title}|||${key.author}|||${key.callNumber}|||${key.branch}`;
+  return `${key.title.toLowerCase()}|||${key.author.toLowerCase()}|||${key.callNumber.toLowerCase()}|||${key.branch.toLowerCase()}`;
 }
 
 /**
  * Convert HoldingKey to string WITHOUT branch for cross-branch grouping
+ * Normalizes to lowercase for case-insensitive comparison
  * @param includeCallNumber - If true, include call number in key (real-time mode)
  */
 function keyToStringWithoutBranch(key: HoldingKey, includeCallNumber: boolean = true): string {
   if (includeCallNumber) {
-    return `${key.title}|||${key.author}|||${key.callNumber}`;
+    return `${key.title.toLowerCase()}|||${key.author.toLowerCase()}|||${key.callNumber.toLowerCase()}`;
   }
-  return `${key.title}|||${key.author}`;
+  return `${key.title.toLowerCase()}|||${key.author.toLowerCase()}`;
 }
 
 /**
@@ -93,23 +95,24 @@ export function deduplicateResults(
       // In real-time mode (!mergeCallNumbers), include call number in grouping key
       // In planning mode (mergeCallNumbers), exclude call number to merge across sections
       const bookKey = keyToStringWithoutBranch(key, !mergeCallNumbers);
-      const branchKey = key.branch;
-      
+      // Normalize branch for case-insensitive grouping
+      const branchKey = key.branch.toLowerCase();
+
       if (!bookGroups.has(bookKey)) {
         bookGroups.set(bookKey, new Map());
       }
-      
+
       const branches = bookGroups.get(bookKey)!;
-      
+
       if (!branches.has(branchKey)) {
         branches.set(branchKey, {
-          branchName: branchKey,
+          branchName: key.branch, // Preserve original capitalization (first encountered)
           totalCopies: 0,
           availableCopies: 0,
           holdings: [],
         });
       }
-      
+
       const branchCounts = branches.get(branchKey)!;
       branchCounts.totalCopies++;
       if (holding.availability?.available) {
