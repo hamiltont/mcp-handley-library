@@ -51,7 +51,6 @@ For remote MCP clients. Exposes an Express server at `http://localhost:3000/mcp`
 | `PORT` | `3000` | Server port |
 | `HOST` | `0.0.0.0` | Bind address |
 | `SERVER_URL` | (auto-detected) | Public base URL (required for production/Vercel) |
-| `OAUTH_ENABLED` | `true` | Enable OAuth discovery endpoints (set `false` to disable) |
 | `MAX_TOTAL_RESULTS` | `40` | Maximum results across all queries |
 
 ### Docker
@@ -73,14 +72,9 @@ To satisfy this requirement, the server includes a **rubber-stamp OAuth implemen
 - Accepts any dynamic client registration request at `/oauth/register`
 - Auto-approves authorization immediately at `/oauth/authorize` (no login screen)
 - Issues random UUID tokens at `/oauth/token` without validation
-- Accepts any Bearer token on the `/mcp` endpoint without checking it
+The OAuth endpoints are always mounted but **no access control is enforced on `/mcp`**. Clients that don't need OAuth (like the MCP Inspector or simple HTTP clients) can call `/mcp` directly without a token. Clients that require OAuth (like ChatGPT) will discover the endpoints and go through the handshake — and it all just works because we say yes to everything.
 
 **None of this provides real security.** It exists solely to conform to the discovery and handshake protocol that clients like ChatGPT require. If you need actual authentication (e.g., for hold placement with library credentials), replace this with a real OAuth provider like [node-oidc-provider](https://github.com/panva/node-oidc-provider) or a managed service like Auth0.
-
-To disable OAuth (e.g., for local development):
-```bash
-OAUTH_ENABLED=false npm run dev:http
-```
 
 ### OAuth Endpoints
 

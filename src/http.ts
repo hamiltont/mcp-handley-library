@@ -1,12 +1,13 @@
 /**
  * HTTP transport for the MCP server using Streamable HTTP
  *
- * When OAUTH_ENABLED=true (or by default), mounts rubber-stamp OAuth endpoints
- * and requires a Bearer token on the /mcp endpoint. The token is never actually
- * validated - see src/oauth.ts for the full disclaimer.
+ * Includes rubber-stamp OAuth endpoints so that clients like ChatGPT (which
+ * require OAuth discovery + dynamic client registration) can connect.
+ * No access control is enforced — the /mcp endpoint is fully open.
+ * See src/oauth.ts for the full disclaimer.
  */
 
-import express, { Request, Response, NextFunction } from "express";
+import express, { Request, Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
@@ -16,77 +17,22 @@ import { createOAuthRouter } from "./oauth.js";
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const HOST = process.env.HOST || "0.0.0.0";
 
-// OAuth is on by default for HTTP mode. Set OAUTH_ENABLED=false to disable.
-const OAUTH_ENABLED = process.env.OAUTH_ENABLED !== "false";
-
 // Store transports by session ID for stateful connections
 const transports = new Map<string, StreamableHTTPServerTransport>();
-
-/**
- * Returns the public base URL for this server.
- */
-function getBaseUrl(req: Request): string {
-  if (process.env.SERVER_URL) {
-    return process.env.SERVER_URL.replace(/\/$/, "");
-  }
-  return `${req.protocol}://${req.get("host")}`;
-}
-
-/**
- * Middleware that checks for a Bearer token on the /mcp endpoint.
- *
- * ⚠️  RUBBER STAMP: This does NOT validate the token. Any non-empty Bearer
- * token is accepted. The only purpose is to trigger the OAuth discovery flow
- * on the client side by returning 401 + WWW-Authenticate when no token is
- * present. Once the client has gone through the OAuth dance and obtained
- * any token, all requests are accepted.
- */
-function requireBearerToken(req: Request, res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    // No token → tell the client where to find our OAuth metadata
-    // This kicks off the MCP authorization flow (RFC 9728)
-    const baseUrl = getBaseUrl(req);
-    res.status(401)
-      .set(
-        "WWW-Authenticate",
-        `Bearer realm="mcp", resource_metadata="${baseUrl}/.well-known/oauth-protected-resource"`
-      )
-      .json({
-        jsonrpc: "2.0",
-        error: {
-          code: -32600,
-          message: "Unauthorized: Bearer token required. See WWW-Authenticate header for OAuth metadata.",
-        },
-        id: null,
-      });
-    return;
-  }
-
-  // RUBBER STAMP: Token present? Good enough. We don't check what it is.
-  next();
-}
 
 export async function startHttpServer(server: McpServer): Promise<void> {
   const app = express();
   app.use(express.json());
 
-  if (OAUTH_ENABLED) {
-    // Mount OAuth discovery and token endpoints
-    app.use(createOAuthRouter());
-    console.log("OAuth endpoints enabled (rubber-stamp mode - no real authentication)");
-  }
+  // Mount OAuth discovery and token endpoints.
+  // These are always available so clients that need OAuth can use them,
+  // but no access control is enforced on /mcp — anyone can call it directly.
+  app.use(createOAuthRouter());
 
-  // Health check endpoint (always public, no auth required)
+  // Health check endpoint
   app.get("/health", (_req: Request, res: Response) => {
-    res.json({ status: "ok", server: "handley-library", version: "1.0.0", oauth: OAUTH_ENABLED });
+    res.json({ status: "ok", server: "handley-library", version: "1.0.0" });
   });
-
-  // Apply bearer token check to /mcp if OAuth is enabled
-  if (OAUTH_ENABLED) {
-    app.use("/mcp", requireBearerToken);
-  }
 
   // MCP endpoint - handles POST requests (client-to-server messages)
   app.post("/mcp", async (req: Request, res: Response) => {
@@ -191,8 +137,6 @@ export async function startHttpServer(server: McpServer): Promise<void> {
     console.log(`Handley Library MCP server running on http://${HOST}:${PORT}`);
     console.log(`MCP endpoint: http://${HOST}:${PORT}/mcp`);
     console.log(`Health check: http://${HOST}:${PORT}/health`);
-    if (OAUTH_ENABLED) {
-      console.log(`OAuth metadata: http://${HOST}:${PORT}/.well-known/oauth-authorization-server`);
-    }
+    console.log(`OAuth metadata: http://${HOST}:${PORT}/.well-known/oauth-authorization-server`);
   });
 }
