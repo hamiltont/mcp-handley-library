@@ -63,6 +63,9 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - ✅ **Server-side branch filtering** - API filters by branch before returning results (fixed Feb 2026)
 - ✅ Availability filtering (optional for planning, always true for real-time)
 - ✅ Meta object architecture (aggregate all data, transform later)
+- ✅ **Bulk search support** - Both tools accept single query or array of queries (max 20)
+- ✅ **Dynamic result limiting** - Automatically divides MAX_TOTAL_RESULTS by query count (min 2 per query)
+- ✅ **Cross-query deduplication** - Books appearing in multiple queries are merged automatically
 
 **Known Issues:**
 - None currently
@@ -70,7 +73,6 @@ Currently, this requires multiple manual steps: web search for recommendations �
 **Current Limitations:**
 - No timeout handling
 - No authentication support (holds/history not possible yet)
-- Fixed 20 result limit (not configurable)
 - Tool names are catalog-specific (not media-agnostic yet, but prepared for future media filtering)
 
 ## Stop Criteria
@@ -101,37 +103,6 @@ Currently, this requires multiple manual steps: web search for recommendations �
 ## Brainstormed Next Features
 
 *These are brainstormed ideas for what we might work on next. They're not commitments or promises - they're possibilities we can evaluate as we go. The actual path forward will emerge through building and testing.*
-
-### Bulk Book Search
-
-**What it does:** New tool `bulk_find_books` that accepts multiple search queries (up to 20) and returns merged results. Results are organized by ordinal: all 1st results from each search, then all 2nd results, then all 3rd results, etc. Each search returns top 3-4 results maximum.
-
-**Why valuable:** Real-world usage shows LLM repeatedly calling book finding tool for multiple titles. Bulk search reduces:
-- Total tool calls (20 searches → 1 call)
-- Token overhead from repeated tool call frames
-- Latency from sequential requests
-
-**Complexity:** Medium-High - requires:
-- Accepting array of search queries
-- Parallel API execution
-- Merging results by ordinal position
-- Deduplication (same book may match multiple queries)
-- Hard limit enforcement (max 20 queries)
-- Per-query result limiting (3-4 results each)
-
-**When we build this, check:**
-- Does ordinal-based merging work for typical LLM workflows?
-- Should we allow configuring results-per-query (3-4 vs up to 20)?
-- How to handle partial failures (some queries succeed, others timeout)?
-- Is 20 query limit appropriate or should it be lower?
-- Should results include which original query matched each book?
-- Does merged output stay under token budget?
-- Are searches truly independent or should we deduplicate input queries?
-
-**Open questions:**
-- Default results-per-query: 3-4 (token efficient) or up to 20 (comprehensive)?
-- Should we support per-query parameters (different branches, availability filters)?
-- How to communicate query→result mapping in output?
 
 ### Media Type Awareness
 
@@ -208,21 +179,6 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - Should this be filtered by format/audience?
 - Token impact - might need aggressive pagination
 
-### Result Limit Configuration
-
-**What it does:**
-- Add environment variable: `MAX_RESULTS=20`
-- Make result limit configurable per deployment
-- Currently hardcoded
-
-**Why valuable:** Flexibility for different use cases. Testing with smaller limits. Future users might want different limits.
-
-**Complexity:** Simple - environment variable + validation.
-
-**When we build this, check:**
-- What's a reasonable range? (5-50?)
-- Should this be per-tool parameter instead?
-- Does it affect API call batching?
 
 ### API Timeout Configuration
 
@@ -321,6 +277,67 @@ Currently, this requires multiple manual steps: web search for recommendations �
 - Should we provide retry hints?
 
 ## Implemented Features
+
+### Bulk Search Support (Feb 2026)
+
+**Implementation approach:**
+- Enhanced both `search_catalog` and `find_on_shelf` to accept single query string OR array of queries
+- No new tool needed - existing tools became more powerful
+- Dynamic result limiting: `MAX_TOTAL_RESULTS / queryCount` with minimum 2 per query
+- Parallel execution via `Promise.all()` for all queries
+- Cross-query deduplication: books appearing in multiple searches get merged automatically
+- Graceful partial failure handling: failed queries don't block successful ones
+
+**Query parameter schema:**
+```typescript
+query: z.union([
+  z.string(),
+  z.array(z.string()).max(20)
+]).describe("Search query or array of queries (max 20)...")
+```
+
+**Dynamic limiting logic:**
+- Environment variable: `MAX_TOTAL_RESULTS=40` (default)
+- Single query: uses full limit (40 results)
+- Multiple queries: `Math.max(2, Math.floor(40 / queryCount))`
+  - 5 queries → 8 results per query
+  - 20 queries → 2 results per query (enforces minimum)
+
+**Deduplication across queries:**
+- Existing `deduplicateResults()` function works seamlessly across merged results
+- Books appearing in multiple queries are consolidated (one row in output)
+- Example: Searching ["Julia Donaldson", "Room on the Broom"] shows "Room on the Broom" once
+
+**Error handling:**
+- Queries execute in parallel with individual error catching
+- Failed queries return `{ resources: [], totalHits: 0, error: "..." }`
+- Successful queries proceed normally
+- Output includes error note: "Note: 2 queries failed" (if applicable)
+- Total hits summed across all successful queries
+
+**Results:**
+- **Zero new code in core logic** - 100% reuse of existing `searchAndMerge()`, `deduplicateResults()`, `formatAsCSV()`
+- **Minimal tool changes** - Only modified parameter schema and added loop/merge logic
+- **Backward compatible** - Single query works exactly as before
+- **Token efficient** - Deduplication prevents duplicate books in output
+- **Fair resource allocation** - Dynamic limiting ensures no single query dominates
+- **20 queries → 2 results each** validated with real API (33 unique books after deduplication)
+
+**Testing:**
+- All 128 existing tests pass unchanged
+- Created `scripts/test-bulk-search.ts` for integration validation with real API calls
+- Validated scenarios: single query, 5 queries, 20 queries, filtered queries, cross-query deduplication
+
+**Key learnings:**
+- **Union types in Zod** work perfectly for "single or array" parameters
+- **No ordinal-based merging needed** - simple concatenation + deduplication works great
+- **Filters apply to all queries** limitation is acceptable (most bulk searches have same context)
+- **Dynamic limiting is critical** - prevents any query from dominating the result set
+- **Parallel execution is fast** - 20 queries complete in similar time as single query
+- **Cross-query deduplication is essential** - prevents duplicate books in output
+- **Partial failure handling is valuable** - one bad query shouldn't block others
+- **Minimum per-query limit (2)** ensures reasonable results even with 20 queries
+- **No need for query tracking** - LLM can infer relevance without knowing which query matched
 
 ### Tool Split: Planning vs Real-Time Mode (Feb 2026)
 

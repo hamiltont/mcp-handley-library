@@ -6,8 +6,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { SearchField } from "../lib/api.js";
 import { searchAndMerge } from "../lib/book-finder.js";
-import { formatAsCSV } from "../lib/csv-formatter.js";
+import { formatAsCSV, type MergedResource } from "../lib/csv-formatter.js";
 import { deduplicateResults } from "../lib/deduplicator.js";
+import { MAX_TOTAL_RESULTS } from "../lib/config.js";
 
 const SearchFieldSchema = z
   .enum([
@@ -49,7 +50,11 @@ export function registerSearchCatalogTool(server: McpServer): void {
     "search_catalog",
     "Plan holds by checking availability across Handley Regional Library branches",
     {
-      query: z.string().describe("Search query"),
+      query: z
+        .union([z.string(), z.array(z.string()).max(20)])
+        .describe(
+          "Search query or array of queries (max 20). Pass single query for comprehensive results, or multiple queries for quick comparison (automatically limited per query)."
+        ),
       field: SearchFieldSchema,
       branch: BranchSchema,
       available_only: z
@@ -60,54 +65,99 @@ export function registerSearchCatalogTool(server: McpServer): void {
     async ({ query, field, branch, available_only }) => {
       try {
         const apiField = fieldMap[field] || "AnyField";
-        const limit = 20;
 
-        // Use shared search and merge logic
-        const { resources, totalHits } = await searchAndMerge({
-          query,
-          apiField,
-          limit,
-          branches: branch,
-          availableOnly: available_only,
-        });
+        // Handle single vs multiple queries
+        const queries = Array.isArray(query) ? query : [query];
+        const queryCount = queries.length;
 
-        if (totalHits === 0) {
+        // Dynamic limit: divide MAX_TOTAL_RESULTS by query count, minimum 2 per query
+        const limitPerQuery = Math.max(2, Math.floor(MAX_TOTAL_RESULTS / queryCount));
+
+        // Execute all queries in parallel
+        const searchPromises = queries.map((q) =>
+          searchAndMerge({
+            query: q,
+            apiField,
+            limit: limitPerQuery,
+            branches: branch,
+            availableOnly: available_only,
+          }).catch((error) => {
+            // Return error marker instead of throwing - enables partial results
+            return {
+              resources: [],
+              totalHits: 0,
+              error: error instanceof Error ? error.message : "Unknown error",
+            };
+          })
+        );
+
+        const results = await Promise.all(searchPromises);
+
+        // Merge all resources and sum totalHits
+        const allResources: MergedResource[] = [];
+        let totalHits = 0;
+        let failedQueries = 0;
+
+        for (const result of results) {
+          if ("error" in result) {
+            failedQueries++;
+          } else {
+            allResources.push(...result.resources);
+            totalHits += result.totalHits;
+          }
+        }
+
+        if (totalHits === 0 && failedQueries === 0) {
+          const queryText = Array.isArray(query) ? `${query.length} queries` : `"${query}"`;
           return {
             content: [
               {
                 type: "text" as const,
-                text: `No results found for "${query}"`,
+                text: `No results found for ${queryText}`,
               },
             ],
           };
         }
 
-        if (resources.length === 0) {
+        if (allResources.length === 0) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: `Found ${totalHits} result(s) but none match filters`,
+                text: `Found ${totalHits} result(s) but none match filters${
+                  failedQueries > 0 ? `. Note: ${failedQueries} queries failed` : ""
+                }`,
               },
             ],
           };
         }
 
         // Planning mode: merge across call numbers (user doesn't care about section)
-        const deduplicatedResults = deduplicateResults(resources, { mergeCallNumbers: true });
+        // Deduplication also merges books that appear in multiple queries
+        const deduplicatedResults = deduplicateResults(allResources, {
+          mergeCallNumbers: true,
+        });
 
         // Planning mode: omit call numbers, keep branch and status
-        const csvOutput = formatAsCSV(deduplicatedResults, { 
+        const csvOutput = formatAsCSV(deduplicatedResults, {
           includeCallNumbers: false,
           includeBranch: true,
           includeStatus: true,
         });
 
+        // Add error note if some queries failed
+        const finalOutput =
+          failedQueries > 0
+            ? `${csvOutput}\n\nNote: ${failedQueries} ${
+                failedQueries === 1 ? "query" : "queries"
+              } failed`
+            : csvOutput;
+
         return {
           content: [
             {
               type: "text" as const,
-              text: csvOutput,
+              text: finalOutput,
             },
           ],
         };
