@@ -10,6 +10,7 @@ function getBaseUrl(req: VercelRequest): string {
 }
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
+  console.log("GET /.well-known/oauth-authorization-server");
   const baseUrl = getBaseUrl(req);
   res.json({
     issuer: baseUrl,

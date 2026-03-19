@@ -58,6 +58,7 @@ export function registerFindOnShelfTool(server: McpServer): void {
       branch: BranchSchema,
     },
     async ({ query, field, branch }) => {
+      const startTime = Date.now();
       try {
         const apiField = fieldMap[field] || "AnyField";
 
@@ -101,6 +102,13 @@ export function registerFindOnShelfTool(server: McpServer): void {
             allResources.push(...result.resources);
             totalHits += result.totalHits;
           }
+        }
+
+        // Log summary for all paths (including no-results)
+        {
+          const elapsed = Date.now() - startTime;
+          const queryText = Array.isArray(query) ? query.join("; ") : query;
+          console.log(`find_on_shelf | q="${queryText}" field=${field} branch=${branch} hits=${totalHits} returned=${allResources.length} failed=${failedQueries} ${elapsed}ms`);
         }
 
         if (totalHits === 0 && failedQueries === 0) {
@@ -158,7 +166,9 @@ export function registerFindOnShelfTool(server: McpServer): void {
           ],
         };
       } catch (error) {
+        const elapsed = Date.now() - startTime;
         const message = error instanceof Error ? error.message : "Unknown error";
+        console.log(`find_on_shelf ERROR | q="${query}" branch=${branch} ${elapsed}ms | ${message}`);
         return {
           content: [
             {

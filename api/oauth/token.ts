@@ -7,6 +7,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).end();
   }
 
+  console.log(`OAuth token | grant_type=${req.body?.grant_type}`);
   res.json({
     access_token: randomUUID(),
     token_type: "Bearer",

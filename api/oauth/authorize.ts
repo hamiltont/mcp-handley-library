@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { randomUUID } from "node:crypto";
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
+  console.log(`OAuth authorize | redirect_uri=${req.query.redirect_uri} client_id=${req.query.client_id}`);
   const redirectUri = req.query.redirect_uri as string;
   const state = req.query.state as string;
 

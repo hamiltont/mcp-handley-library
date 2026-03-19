@@ -8,6 +8,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const body = req.body || {};
+  console.log(`OAuth register | client_name=${body.client_name || "MCP Client"}`);
   res.status(201).json({
     client_id: randomUUID(),
     client_secret: randomUUID(),

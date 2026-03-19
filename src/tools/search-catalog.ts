@@ -63,6 +63,7 @@ export function registerSearchCatalogTool(server: McpServer): void {
         .describe("Only return currently available items"),
     },
     async ({ query, field, branch, available_only }) => {
+      const startTime = Date.now();
       try {
         const apiField = fieldMap[field] || "AnyField";
 
@@ -104,6 +105,16 @@ export function registerSearchCatalogTool(server: McpServer): void {
           } else {
             allResources.push(...result.resources);
             totalHits += result.totalHits;
+          }
+        }
+
+        // Log summary for all paths (including no-results)
+        {
+          const elapsed = Date.now() - startTime;
+          const queryText = Array.isArray(query) ? query.join("; ") : query;
+          console.log(`search_catalog | q="${queryText}" field=${field} hits=${totalHits} returned=${allResources.length} failed=${failedQueries} ${elapsed}ms`);
+          if (branch || available_only) {
+            console.log(`search_catalog filters | branch=${branch?.join(",") || "all"} available_only=${available_only}`);
           }
         }
 
@@ -162,7 +173,9 @@ export function registerSearchCatalogTool(server: McpServer): void {
           ],
         };
       } catch (error) {
+        const elapsed = Date.now() - startTime;
         const message = error instanceof Error ? error.message : "Unknown error";
+        console.log(`search_catalog ERROR | q="${query}" ${elapsed}ms | ${message}`);
         return {
           content: [
             {

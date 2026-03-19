@@ -10,6 +10,16 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer } from "../src/server.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Log summary as first line (most visible on Vercel)
+  const body = req.body;
+  const rpcMethod = Array.isArray(body)
+    ? body.map((r: any) => r.method).join(", ")
+    : body?.method || "unknown";
+  const rpcId = Array.isArray(body)
+    ? body.map((r: any) => r.id).join(", ")
+    : body?.id;
+  console.log(`MCP ${req.method} | method=${rpcMethod} id=${rpcId}`);
+
   // Only POST is supported in stateless mode
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");

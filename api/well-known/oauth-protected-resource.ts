@@ -10,6 +10,7 @@ function getBaseUrl(req: VercelRequest): string {
 }
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
+  console.log("GET /.well-known/oauth-protected-resource");
   const baseUrl = getBaseUrl(req);
   res.json({
     resource: `${baseUrl}/mcp`,
