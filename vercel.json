@@ -4,6 +4,10 @@
   "outputDirectory": ".",
   "rewrites": [
     {
+      "source": "/",
+      "destination": "/api/index"
+    },
+    {
       "source": "/.well-known/oauth-protected-resource",
       "destination": "/api/well-known/oauth-protected-resource"
     },

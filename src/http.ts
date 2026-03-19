@@ -13,6 +13,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "node:crypto";
 import { createOAuthRouter } from "./oauth.js";
+import { getLandingPageHtml } from "./landing.js";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -28,6 +29,11 @@ export async function startHttpServer(server: McpServer): Promise<void> {
   // These are always available so clients that need OAuth can use them,
   // but no access control is enforced on /mcp — anyone can call it directly.
   app.use(createOAuthRouter());
+
+  // Landing page
+  app.get("/", (_req: Request, res: Response) => {
+    res.type("html").send(getLandingPageHtml());
+  });
 
   // Health check endpoint
   app.get("/health", (_req: Request, res: Response) => {
