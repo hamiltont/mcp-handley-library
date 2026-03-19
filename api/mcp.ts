@@ -16,10 +16,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // GET to probe for SSE support; the 405 tells them it's unavailable and they
   // gracefully fall back to POST-only mode. This is expected and harmless.
   if (req.method !== "POST") {
-    const ua = req.headers["user-agent"] ?? "unknown";
-    console.log(
-      `MCP ${req.method} rejected (405) — this stateless server does not support SSE push notifications. Client: ${ua}`
-    );
+    console.log(`MCP ${req.method} rejected (405) — this stateless server does not support SSE push notifications`);
     res.setHeader("Allow", "POST");
     res.status(405).json({
       jsonrpc: "2.0",
