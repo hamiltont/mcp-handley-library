@@ -10,17 +10,13 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer } from "../src/server.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Only POST carries JSON-RPC; log non-POST requests with extra detail
-  // so we can understand what the MCP client is probing for.
+  // MCP Streamable HTTP defines GET for SSE (server-push notifications) and
+  // DELETE for session teardown, but this Vercel deployment is stateless — no
+  // long-lived connections, no sessions. Clients (e.g. Claude mobile) send a
+  // GET to probe for SSE support; the 405 tells them it's unavailable and they
+  // gracefully fall back to POST-only mode. This is expected and harmless.
   if (req.method !== "POST") {
-    console.log(
-      `MCP ${req.method} (non-POST) | url=${req.url} | accept=${req.headers.accept ?? "none"} | ` +
-      `content-type=${req.headers["content-type"] ?? "none"} | ` +
-      `user-agent=${req.headers["user-agent"] ?? "none"} | ` +
-      `headers=${JSON.stringify(Object.keys(req.headers))} | ` +
-      `query=${JSON.stringify(req.query)} | ` +
-      `body=${JSON.stringify(req.body) ?? "undefined"}`
-    );
+    console.log(`MCP ${req.method} rejected (405) — this stateless server does not support SSE push notifications`);
     res.setHeader("Allow", "POST");
     res.status(405).json({
       jsonrpc: "2.0",
